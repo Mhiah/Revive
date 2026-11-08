@@ -38,6 +38,10 @@ export async function run(opts) {
 
   const provider = new JsonRpcProvider({ url: rpc });
   const root = new Account(rootId, provider, rootKey);
+  const rootPub = KeyPair.fromString(rootKey).getPublicKey().toString();
+  const rootKeys = (await root.getAccessKeyList()).keys.map((k) => k.public_key);
+  if (!rootKeys.includes(rootPub)) throw new Error(`The private key does not match any key on ${rootId}; nothing was spent. Re-copy the key from the wallet.`);
+  log(`Key matches an access key on ${rootId}`);
   const key = KeyPair.fromRandom("ed25519");
   const pub = key.getPublicKey().toString();
   const tag = Date.now().toString(36).slice(-5);
@@ -209,7 +213,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     lines: raw.split("\n").length,
   }));
   // Accept the key however it was pasted (quotes, spaces, a JSON blob): take the ed25519:... part.
-  const NEAR_PRIVATE_KEY = (String(process.env.NEAR_PRIVATE_KEY || "").match(/ed25519:[1-9A-HJ-NP-Za-km-z]+/) || [])[0];
+  // Drop anything that can't be part of a base58 key (line breaks, quotes, UI text like a stray "0").
+  const cleanBody = [...body].filter((c) => B58.test(c)).join("");
+  const NEAR_PRIVATE_KEY = cleanBody ? "ed25519:" + cleanBody : undefined;
   const NEAR_ACCOUNT_ID = String(process.env.NEAR_ACCOUNT_ID || "").replace(/["'\s]/g, "");
   if (!NEAR_ACCOUNT_ID || !NEAR_PRIVATE_KEY) {
     console.error("Set NEAR_ACCOUNT_ID and NEAR_PRIVATE_KEY (a funded testnet account, about 10 NEAR).");
