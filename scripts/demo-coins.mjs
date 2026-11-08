@@ -45,7 +45,7 @@ export async function run(opts) {
 
   const view = (contractId, method, args = {}) => provider.callFunction({ contractId, method, args });
   const as = (id) => new Account(id, provider, key.toString());
-  const call = (who, contractId, methodName, args = {}, deposit = "0", gas = teraToGas("100")) =>
+  const call = (who, contractId, methodName, args = {}, deposit = "0", gas = teraToGas("30")) =>
     who.callFunction({ contractId, methodName, args, deposit, gas });
   const fails = async (p, expect) => {
     try { await p; } catch (e) { return String(e.message || e).includes(expect); }
@@ -61,8 +61,8 @@ export async function run(opts) {
   const factoryFund = (factoryBytes + coinBytes + 4_000) * perByte + 0.3;
   const devFund = 2 * (launchCost + 0.1) + 0.2 + 0.3;          // two launches, treasury seeds, penalty, gas
   const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
-  const names = { dev: r2(devFund), alice: "0.1", bob: "0.1", carol: "0.1", whale: "0.1" };
-  const need = factoryFund + devFund + 0.4 + (givenSteward ? 0 : 0.25) + 0.2;
+  const names = { dev: r2(devFund), alice: "0.15", bob: "0.15", carol: "0.15", whale: "0.15" };
+  const need = factoryFund + devFund + 0.6 + (givenSteward ? 0 : 0.25) + 0.2;
   log(`Coin wasm ${coinBytes} bytes, factory wasm ${factoryBytes} bytes`);
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
