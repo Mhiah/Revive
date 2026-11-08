@@ -3,6 +3,10 @@
 //            vote, holders vote a steward in, the coin revives, the steward pulses.
 //   $BACK  — the dev goes silent, a takeover opens, the dev comes back mid-vote
 //            and pays the penalty into the treasury.
+//   $MEME  — a plain NEP-141 launched outside Revive is connected: the dev locks
+//            their bag, holders stake, the dev goes silent, a whale stakes after
+//            the death and gets no vote, holders take over, the bag is sealed.
+// STORIES=coins,guard picks which run (default both).
 //
 // Testnet (from the repo root, after building both wasm files):
 //   NEAR_ACCOUNT_ID=you.testnet NEAR_PRIVATE_KEY=ed25519:... node scripts/demo-coins.mjs
@@ -27,6 +31,10 @@ export async function run(opts) {
     rpc, rootId, rootKey,
     coinWasm = "contract/target/near/revive.wasm",
     factoryWasm = "factory/target/near/revive_factory.wasm",
+    guardWasm = "guard/target/near/revive_guard.wasm",
+    tokenWasm = "samples/plain-token/target/near/plain_token.wasm",
+    stories = ["coins", "guard"],
+    holderNear = "0.4",              // sandbox gas is pricier than testnet's
     prefix = "revive",
     timer = 60,                       // pulse interval and vote length, seconds
     daoSuffix,                        // e.g. ".sputnikv2.testnet"; default: stand-in stewards under the root
@@ -58,19 +66,25 @@ export async function run(opts) {
 
   // ------------------------------------------------------------ accounts
   // Fund each account with what it needs: storage is 1 NEAR per 100 KB.
-  const coinBytes = (await readFile(coinWasm)).length;
-  const factoryBytes = (await readFile(factoryWasm)).length;
+  const want = (x) => stories.includes(x);
+  const size = async (f) => (await readFile(f)).length;
+  const coinBytes = want("coins") ? await size(coinWasm) : 0;
+  const guardBytes = want("guard") ? await size(guardWasm) : 0;
+  const tokenBytes = want("guard") ? await size(tokenWasm) : 0;
+  const factoryBytes = await size(factoryWasm);
   const perByte = 1e-5;                                         // NEAR per byte
   const launchCost = (coinBytes + 10_000) * perByte;            // matches get_launch_cost
-  const factoryFund = (factoryBytes + coinBytes + 4_000) * perByte + 0.3;
-  const devFund = 2 * (launchCost + 0.1) + 0.2 + 0.3;          // two launches, treasury seeds, penalty, gas
+  const connectCost = (guardBytes + 10_000) * perByte + 0.00125; // matches get_connect_cost
+  const factoryFund = (factoryBytes + coinBytes + guardBytes + 4_000) * perByte + 0.3;
+  const devFund = (want("coins") ? 2 * (launchCost + 0.1) + 0.2 : 0) + (want("guard") ? connectCost + 0.1 + 0.2 : 0) + 0.3;
+  const tokenFund = want("guard") ? (tokenBytes + 4_000) * perByte + 0.3 : 0;
   const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
-  const names = { dev: r2(devFund), alice: "0.15", bob: "0.15", carol: "0.15", whale: "0.15" };
-  const need = factoryFund + devFund + 0.6 + (givenSteward ? 0 : 0.25) + 0.2;
-  log(`Coin wasm ${coinBytes} bytes, factory wasm ${factoryBytes} bytes`);
+  const names = { dev: r2(devFund), alice: holderNear, bob: holderNear, carol: holderNear, whale: holderNear };
+  const need = factoryFund + devFund + tokenFund + 4 * Number(holderNear) + (givenSteward ? 0 : 0.25) + 0.2;
+  log(`Stories: ${stories.join(", ")}. Wasm bytes: coin ${coinBytes}, guard ${guardBytes}, token ${tokenBytes}, factory ${factoryBytes}`);
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
-  if (have < need) throw new Error(`Not enough NEAR on ${rootId}: has ${have}, needs about ${need}. Top it up from the testnet faucet.`);
+  if (have < need) throw new Error(`Not enough NEAR on ${rootId}: has ${have}, needs about ${r2(need)}. Top it up from the testnet faucet.`);
   log(`Creating demo accounts with tag ${tag}`);
   const factoryId = `${prefix}-${tag}.${rootId}`;
   await root.createSubAccount({ accountOrPrefix: `${prefix}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(r2(factoryFund)) });
@@ -99,10 +113,17 @@ export async function run(opts) {
   const factory = as(factoryId);
   await factory.deployContract(await readFile(factoryWasm));
   await call(factory, factoryId, "new", { owner: rootId });
-  const wasm = await readFile(coinWasm);
-  await root.callFunction({ contractId: factoryId, methodName: "store_code", args: new Uint8Array(wasm), gas: teraToGas("300") });
-  const codeHash = await view(factoryId, "get_code_hash");
-  check(!!codeHash, `factory stored the coin code (hash ${codeHash})`);
+  let codeHash = null, guardHash = null;
+  if (want("coins")) {
+    await root.callFunction({ contractId: factoryId, methodName: "store_code", args: new Uint8Array(await readFile(coinWasm)), gas: teraToGas("300") });
+    codeHash = await view(factoryId, "get_code_hash");
+    check(!!codeHash, `factory stored the coin code (hash ${codeHash})`);
+  }
+  if (want("guard")) {
+    await root.callFunction({ contractId: factoryId, methodName: "store_guard_code", args: new Uint8Array(await readFile(guardWasm)), gas: teraToGas("300") });
+    guardHash = await view(factoryId, "get_guard_code_hash");
+    check(!!guardHash, `factory stored the guard code (hash ${guardHash})`);
+  }
   if (lockFactory) {
     await factory.deleteKey(pub);
     const keys = await new Account(factoryId, provider).getAccessKeyList();
@@ -149,6 +170,9 @@ export async function run(opts) {
     await sleep(wait);
   }
 
+  const result = { factory: factoryId, code_hash: codeHash, guard_code_hash: guardHash, coins: [], steward,
+    accounts: Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, v.accountId])) };
+  if (want("coins")) {
   // ---------------------------------------------------- story 1: revival
   log("Story 1: $NINE dies and revives");
   const nine = await launch("nine", "NINE");
@@ -191,10 +215,86 @@ export async function run(opts) {
 
   const lore = await view(nine, "get_lore", {});
   check(lore.some((l) => l.kind === "revived") && lore.some((l) => l.kind === "flatline"), "NINE's lore records the flatline and the revival");
-  const coins = await view(factoryId, "get_coins", {});
-  check(coins.length === 2, "factory registry lists both coins");
+  result.coins.push(nine, back);
+  }
 
-  const result = { factory: factoryId, code_hash: codeHash, coins: [nine, back], steward, accounts: Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, v.accountId])) };
+  if (want("guard")) {
+  // ------------------------------------- story 3: an outside token, connected
+  log("Story 3: $MEME, a plain NEP-141 launched outside Revive, connected and taken over");
+  const tokenId = `meme-${tag}.${rootId}`;
+  await root.createSubAccount({ accountOrPrefix: `meme-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(r2(tokenFund)) });
+  const tokenAcc = as(tokenId);
+  await tokenAcc.deployContract(await readFile(tokenWasm));
+  await call(tokenAcc, tokenId, "new", { owner_id: acc.dev.accountId, total_supply: tokens(1_000_000_000), name: "Meme Cooked", symbol: "MEME" });
+  check((await view(tokenId, "ft_metadata")).symbol === "MEME", `outside token ${tokenId} exists, 1B $MEME owned by the dev`);
+  const reg = (await view(tokenId, "storage_balance_bounds")).min;
+  for (const h of ["alice", "bob", "carol", "whale"]) await call(acc[h], tokenId, "storage_deposit", {}, reg);
+  for (const [h, n] of Object.entries({ alice: 300_000_000, bob: 200_000_000, carol: 100_000_000 })) {
+    await call(acc.dev, tokenId, "ft_transfer", { receiver_id: acc[h].accountId, amount: tokens(n) }, "1");
+  }
+  const ftCall = (who, receiver, n, msg) =>
+    call(who, tokenId, "ft_transfer_call", { receiver_id: receiver, amount: tokens(n), msg }, "1", teraToGas("100"));
+
+  const gcost = BigInt(await view(factoryId, "get_connect_cost"));
+  log(`  connect cost ${Number(gcost / 10n ** 21n) / 1000} NEAR + 0.1 NEAR treasury`);
+  const raw = await acc.dev.callFunctionRaw({
+    contractId: factoryId, methodName: "connect", gas: teraToGas("300"),
+    deposit: (gcost + BigInt(nearToYocto("0.1"))).toString(),
+    args: { name: "meme", config: {
+      token_id: tokenId, links: "https://github.com/Mhiah/Revive",
+      pulse_interval_secs: timer, vote_duration_secs: timer, quorum_bps: 2000, vest_duration_secs: 86400,
+      spend_cap: nearToYocto("0.1").toString(), spend_period_secs: 3600,
+      comeback_penalty: nearToYocto("0.2").toString(), dao_suffix: suffix,
+    } },
+  });
+  for (const r of raw.receipts_outcome || []) {
+    if (r.outcome.status && r.outcome.status.Failure) console.error("  receipt failed:", r.outcome.executor_id, JSON.stringify(r.outcome.status.Failure));
+    for (const l of r.outcome.logs || []) if (!l.startsWith("EVENT_JSON")) console.log("  log:", l);
+  }
+  const guardId = `meme.${factoryId}`;
+  const g0 = await view(guardId, "get_status");
+  check(g0.kind === "guard" && g0.token_id === tokenId && g0.creator === acc.dev.accountId && g0.config.symbol === "MEME",
+    `connected: guard ${guardId} protects ${tokenId}; name and symbol read from the token`);
+  check((await view(tokenId, "storage_balance_of", { account_id: guardId })) !== null, "the factory registered the guard on the token");
+
+  await ftCall(acc.dev, guardId, 100_000_000, "lock");
+  check(BigInt((await view(guardId, "get_status")).dev_locked) === 100_000_000n * TOKEN, "dev locked a 100M $MEME bag in the guard");
+  for (const [h, n] of Object.entries({ alice: 300_000_000, bob: 200_000_000, carol: 100_000_000 })) await ftCall(acc[h], guardId, n, "stake");
+  check(BigInt((await view(guardId, "get_status")).staked) === 600_000_000n * TOKEN, "holders staked 600M $MEME");
+  await call(acc.dev, guardId, "pulse");
+  log("  dev goes silent");
+  await waitPast(guardId, "flatline");
+  check((await view(guardId, "get_status")).status === "flatlined", "MEME's guard flatlined");
+  await call(acc.dev, tokenId, "ft_transfer", { receiver_id: acc.whale.accountId, amount: tokens(250_000_000) }, "1");
+  await ftCall(acc.whale, guardId, 250_000_000, "stake");
+  check((await view(guardId, "get_vote_weight", { account_id: acc.whale.accountId })) === "0", "whale staked 250M after the death: weight 0");
+  await call(acc.alice, guardId, "start_takeover", { steward });
+  await call(acc.alice, guardId, "vote", { support: true });
+  check(await fails(call(acc.whale, guardId, "vote", { support: false }), "no voting weight"), "whale's vote refused");
+  await call(acc.bob, guardId, "vote", { support: true });
+  await call(acc.carol, guardId, "vote", { support: false });
+  await waitPast(guardId, "vote");
+  const done = await call(acc.bob, guardId, "finalize_takeover");
+  const g1 = await view(guardId, "get_status");
+  check(done === true && g1.keeper === steward && g1.lives === 1, "MEME revived: steward is keeper, lives = 1");
+  check(BigInt(g1.dev_burned) === 100_000_000n * TOKEN && BigInt(g1.dev_locked) === 0n, "dev's 100M bag sealed in the guard forever");
+  const held = BigInt(await view(tokenId, "ft_balance_of", { account_id: guardId }));
+  check(held === BigInt(g1.staked) + BigInt(g1.dev_burned), `guard holds exactly staked + sealed (${held / TOKEN} $MEME)`);
+  const bobBefore = BigInt(await view(tokenId, "ft_balance_of", { account_id: acc.bob.accountId }));
+  await call(acc.bob, guardId, "unstake", { amount: tokens(50_000_000) }, "0", teraToGas("100"));
+  const bobAfter = BigInt(await view(tokenId, "ft_balance_of", { account_id: acc.bob.accountId }));
+  check(bobAfter - bobBefore === 50_000_000n * TOKEN && (await view(guardId, "get_stake", { account_id: acc.bob.accountId })) === tokens(150_000_000),
+    "bob unstaked 50M $MEME back to his wallet");
+  if (stewardAcc) {
+    await call(stewardAcc, guardId, "pulse");
+    check((await view(guardId, "get_status")).status === "alive", "steward pulsed: MEME's guard alive under its new keeper");
+  }
+  result.coins.push(guardId);
+  result.token = tokenId;
+  }
+
+  const registry = await view(factoryId, "get_coins", {});
+  check(registry.length === result.coins.length && registry.every((c) => c.kind === (c.token_id ? "guard" : "coin")), `factory registry lists ${result.coins.length} entries with their kinds`);
   await writeFile(out, JSON.stringify(result, null, 2));
   log("All checks passed.", JSON.stringify(result));
   return result;
@@ -218,7 +318,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const NEAR_PRIVATE_KEY = cleanBody ? "ed25519:" + cleanBody : undefined;
   const NEAR_ACCOUNT_ID = String(process.env.NEAR_ACCOUNT_ID || "").replace(/["'\s]/g, "");
   if (!NEAR_ACCOUNT_ID || !NEAR_PRIVATE_KEY) {
-    console.error("Set NEAR_ACCOUNT_ID and NEAR_PRIVATE_KEY (a funded testnet account, about 10 NEAR).");
+    console.error("Set NEAR_ACCOUNT_ID and NEAR_PRIVATE_KEY (ed25519:...) for a funded testnet account.");
     process.exit(1);
   }
   run({
@@ -228,6 +328,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     timer: Number(process.env.TIMER || 60),
     steward: process.env.STEWARD,
     daoSuffix: process.env.DAO_SUFFIX,
+    stories: (process.env.STORIES || "coins,guard").split(",").map((x) => x.trim()).filter(Boolean),
+    holderNear: process.env.HOLDER_NEAR || "0.15",
     out: process.env.OUT || "demo-coins.json",
   }).catch((e) => { console.error(e); process.exit(1); });
 }

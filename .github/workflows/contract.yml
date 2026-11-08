@@ -17,7 +17,7 @@ jobs:
 
       - name: Unit tests and lints
         run: |
-          for c in contract factory; do
+          for c in contract factory guard samples/plain-token; do
             (cd $c && cargo test && cargo clippy --all-targets -- -D warnings)
           done
 
@@ -47,11 +47,13 @@ jobs:
           cargo near --version
           (cd contract && cargo near build non-reproducible-wasm --no-abi)
           (cd factory && cargo near build non-reproducible-wasm --no-abi)
+          (cd guard && cargo near build non-reproducible-wasm --no-abi)
+          (cd samples/plain-token && cargo near build non-reproducible-wasm --no-abi)
 
       - name: Shrink wasm (smaller code = cheaper storage)
         run: |
           sudo apt-get install -yq binaryen >/dev/null
-          for w in contract/target/near/revive.wasm factory/target/near/revive_factory.wasm; do
+          for w in contract/target/near/revive.wasm factory/target/near/revive_factory.wasm guard/target/near/revive_guard.wasm samples/plain-token/target/near/plain_token.wasm; do
             before=$(stat -c%s $w)
             wasm-opt -Oz --strip-debug --strip-producers $w -o $w.opt && mv $w.opt $w
             echo "$w: $before -> $(stat -c%s $w) bytes"
@@ -59,8 +61,8 @@ jobs:
 
       - name: SHA-256 of the wasm (compare with the deployed code hash)
         run: |
-          sha256sum contract/target/near/revive.wasm factory/target/near/revive_factory.wasm
-          ls -l contract/target/near/revive.wasm factory/target/near/revive_factory.wasm
+          sha256sum contract/target/near/revive.wasm factory/target/near/revive_factory.wasm guard/target/near/revive_guard.wasm samples/plain-token/target/near/plain_token.wasm
+          ls -l contract/target/near/revive.wasm factory/target/near/revive_factory.wasm guard/target/near/revive_guard.wasm samples/plain-token/target/near/plain_token.wasm
 
       - uses: actions/upload-artifact@v4
         with:
@@ -68,6 +70,8 @@ jobs:
           path: |
             contract/target/near/revive.wasm
             factory/target/near/revive_factory.wasm
+            guard/target/near/revive_guard.wasm
+            samples/plain-token/target/near/plain_token.wasm
 
   sandbox-e2e:
     needs: test-and-build
@@ -80,7 +84,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run both stories on a local NEAR sandbox
+      - name: Run all three stories on a local NEAR sandbox
         run: |
           cd scripts && npm install --no-audit --no-fund && cd ..
           node scripts/sandbox-e2e.mjs

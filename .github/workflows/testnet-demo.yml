@@ -1,10 +1,11 @@
 name: testnet-demo
 
 # Run by hand (Actions → testnet-demo → Run workflow). Needs two repository
-# secrets for a funded testnet account (about 11 NEAR):
+# secrets for a funded testnet account (the run prints what it needs:
+# about 11 NEAR for both coin stories, about 7 for the connect story alone):
 #   NEAR_ACCOUNT_ID   e.g. revive-demo.testnet
 #   NEAR_PRIVATE_KEY  ed25519:...
-# Deploys the factory and two demo coins, plays both stories live, and
+# Deploys the factory, plays the chosen stories live, and
 # uploads demo-coins.json with the account names (no keys).
 on:
   workflow_dispatch:
@@ -15,6 +16,9 @@ on:
       timer:
         description: "Pulse interval and vote length in seconds (min 60)"
         default: "60"
+      stories:
+        description: "coins = $NINE and $BACK, guard = connect an outside $MEME token"
+        default: "guard"
 
 jobs:
   deploy:
@@ -43,25 +47,28 @@ jobs:
         run: |
           (cd contract && cargo near build non-reproducible-wasm --no-abi)
           (cd factory && cargo near build non-reproducible-wasm --no-abi)
-          sha256sum contract/target/near/revive.wasm
+          (cd guard && cargo near build non-reproducible-wasm --no-abi)
+          (cd samples/plain-token && cargo near build non-reproducible-wasm --no-abi)
       - name: Shrink wasm (smaller code = cheaper storage)
         run: |
           sudo apt-get install -yq binaryen >/dev/null
-          for w in contract/target/near/revive.wasm factory/target/near/revive_factory.wasm; do
+          for w in contract/target/near/revive.wasm factory/target/near/revive_factory.wasm guard/target/near/revive_guard.wasm samples/plain-token/target/near/plain_token.wasm; do
             before=$(stat -c%s $w)
             wasm-opt -Oz --strip-debug --strip-producers $w -o $w.opt && mv $w.opt $w
             echo "$w: $before -> $(stat -c%s $w) bytes"
           done
+          sha256sum contract/target/near/revive.wasm factory/target/near/revive_factory.wasm guard/target/near/revive_guard.wasm samples/plain-token/target/near/plain_token.wasm
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Deploy and play both stories on testnet
+      - name: Deploy and play the stories on testnet
         env:
           NEAR_ACCOUNT_ID: ${{ secrets.NEAR_ACCOUNT_ID }}
           NEAR_PRIVATE_KEY: ${{ secrets.NEAR_PRIVATE_KEY }}
           STEWARD: ${{ inputs.steward }}
           DAO_SUFFIX: ${{ inputs.steward && '.sputnikv2.testnet' || '' }}
           TIMER: ${{ inputs.timer }}
+          STORIES: ${{ inputs.stories }}
         run: |
           cd scripts && npm install --no-audit --no-fund && cd ..
           node scripts/demo-coins.mjs

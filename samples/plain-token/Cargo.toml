@@ -1,0 +1,24 @@
+[package]
+name = "plain-token"
+version = "0.1.0"
+edition = "2021"
+description = "A plain NEP-141 token with no Revive code, standing in for a coin launched elsewhere (e.g. meme.cooking)"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "5.30"
+near-contract-standards = "5.30"
+
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true
+
+[dev-dependencies]
+near-sdk = { version = "5.30", features = ["unit-testing"] }
