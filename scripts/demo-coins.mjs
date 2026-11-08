@@ -41,6 +41,7 @@ export async function run(opts) {
     steward: givenSteward,            // an existing Sputnik DAO that will pulse, if you have one
     stewardKey,                       // key of a stand-in steward account (sandbox)
     lockFactory = true,
+    existingFactory,                  // reuse a deployed, locked factory instead of making one
     out = "demo-coins.json",
   } = opts;
 
@@ -50,7 +51,8 @@ export async function run(opts) {
   const rootKeys = (await root.getAccessKeyList()).keys.map((k) => k.public_key);
   if (!rootKeys.includes(rootPub)) throw new Error(`The private key does not match any key on ${rootId}; nothing was spent. Re-copy the key from the wallet.`);
   log(`Key matches an access key on ${rootId}`);
-  const key = KeyPair.fromRandom("ed25519");
+  // Demo accounts share the root's key, so a run that stops halfway can be picked up again.
+  const key = KeyPair.fromString(rootKey);
   const pub = key.getPublicKey().toString();
   const tag = Date.now().toString(36).slice(-5);
   const sub = (p) => `${p}-${tag}.${rootId}`;
@@ -75,7 +77,7 @@ export async function run(opts) {
   const perByte = 1e-5;                                         // NEAR per byte
   const launchCost = (coinBytes + 10_000) * perByte;            // matches get_launch_cost
   const connectCost = (guardBytes + 10_000) * perByte + 0.00125; // matches get_connect_cost
-  const factoryFund = (factoryBytes + coinBytes + guardBytes + 4_000) * perByte + 0.3;
+  const factoryFund = existingFactory ? 0 : (factoryBytes + coinBytes + guardBytes + 4_000) * perByte + 0.3;
   const devFund = (want("coins") ? 2 * (launchCost + 0.1) + 0.2 : 0) + (want("guard") ? connectCost + 0.1 + 0.2 : 0) + 0.3;
   const tokenFund = want("guard") ? (tokenBytes + 4_000) * perByte + 0.3 : 0;
   const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
@@ -86,8 +88,8 @@ export async function run(opts) {
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
   if (have < need) throw new Error(`Not enough NEAR on ${rootId}: has ${have}, needs about ${r2(need)}. Top it up from the testnet faucet.`);
   log(`Creating demo accounts with tag ${tag}`);
-  const factoryId = `${prefix}-${tag}.${rootId}`;
-  await root.createSubAccount({ accountOrPrefix: `${prefix}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(r2(factoryFund)) });
+  const factoryId = existingFactory || `${prefix}-${tag}.${rootId}`;
+  if (!existingFactory) await root.createSubAccount({ accountOrPrefix: `${prefix}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(r2(factoryFund)) });
   const acc = {};
   for (const [n, amt] of Object.entries(names)) {
     await root.createSubAccount({ accountOrPrefix: `${n}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(amt) });
@@ -109,11 +111,17 @@ export async function run(opts) {
   }
 
   // ------------------------------------------------------------- factory
+  let codeHash = null, guardHash = null;
+  if (existingFactory) {
+    log(`Reusing factory ${factoryId}`);
+    if (want("coins")) codeHash = await view(factoryId, "get_code_hash");
+    if (want("guard")) guardHash = await view(factoryId, "get_guard_code_hash");
+    check((!want("coins") || codeHash) && (!want("guard") || guardHash), "the existing factory has the code these stories need");
+  } else {
   log(`Deploying factory ${factoryId}`);
   const factory = as(factoryId);
   await factory.deployContract(await readFile(factoryWasm));
   await call(factory, factoryId, "new", { owner: rootId });
-  let codeHash = null, guardHash = null;
   if (want("coins")) {
     await root.callFunction({ contractId: factoryId, methodName: "store_code", args: new Uint8Array(await readFile(coinWasm)), gas: teraToGas("300") });
     codeHash = await view(factoryId, "get_code_hash");
@@ -128,6 +136,7 @@ export async function run(opts) {
     await factory.deleteKey(pub);
     const keys = await new Account(factoryId, provider).getAccessKeyList();
     check((keys.keys || []).length === 0, "factory has no keys left: nobody controls it");
+  }
   }
 
   const config = (name, symbol) => ({
@@ -168,6 +177,14 @@ export async function run(opts) {
     const wait = Math.max(0, target - s.now) + 4;
     log(`  … waiting ${wait}s`);
     await sleep(wait);
+    // A view can lag the latest block (and miss a pulse that just landed), so keep
+    // checking until the chain itself shows the deadline has passed.
+    for (let i = 0; i < 40; i++) {
+      const n = await view(coinId, "get_status");
+      const t = field === "flatline" ? n.flatline_at : n.takeover?.ends_at;
+      if (t !== undefined && n.now > t + 1) return;
+      await sleep(3);
+    }
   }
 
   const result = { factory: factoryId, code_hash: codeHash, guard_code_hash: guardHash, coins: [], steward,
@@ -330,6 +347,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     daoSuffix: process.env.DAO_SUFFIX,
     stories: (process.env.STORIES || "coins,guard").split(",").map((x) => x.trim()).filter(Boolean),
     holderNear: process.env.HOLDER_NEAR || "0.15",
+    existingFactory: process.env.FACTORY || undefined,
     out: process.env.OUT || "demo-coins.json",
   }).catch((e) => { console.error(e); process.exit(1); });
 }

@@ -19,6 +19,9 @@ on:
       stories:
         description: "coins = $NINE and $BACK, guard = connect an outside $MEME token"
         default: "guard"
+      factory:
+        description: "Reuse an existing locked factory (optional), e.g. revive-bhtat.revive.testnet"
+        required: false
 
 jobs:
   deploy:
@@ -69,6 +72,7 @@ jobs:
           DAO_SUFFIX: ${{ inputs.steward && '.sputnikv2.testnet' || '' }}
           TIMER: ${{ inputs.timer }}
           STORIES: ${{ inputs.stories }}
+          FACTORY: ${{ inputs.factory }}
         run: |
           cd scripts && npm install --no-audit --no-fund && cd ..
           node scripts/demo-coins.mjs
