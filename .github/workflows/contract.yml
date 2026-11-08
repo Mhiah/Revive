@@ -24,7 +24,14 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Install cargo-near
-        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
+        run: |
+          set -o pipefail
+          if ! curl --proto '=https' --tlsv1.2 -LsSf --retry 5 --retry-all-errors \
+              https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh; then
+            echo "Installer download failed; building cargo-near from source"
+            cargo install cargo-near --locked
+          fi
+          cargo near --version
 
       - name: Build wasm
         run: cargo near build non-reproducible-wasm
