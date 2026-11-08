@@ -110,8 +110,14 @@ export async function run(opts) {
     const coinId = `${name}.${factoryId}`;
     const cfg = config(`${symbol === "NINE" ? "Nine Lives" : "Back From The Dead"}`, symbol);
     cfg.distributor = coinId;
-    const ok = await call(acc.dev, factoryId, "launch", { name, config: cfg }, nearToYocto("1.7").toString(), teraToGas("300"));
-    check(ok === true, `${symbol} launched at ${coinId}`);
+    const raw = await acc.dev.callFunctionRaw({ contractId: factoryId, methodName: "launch", args: { name, config: cfg },
+      deposit: nearToYocto("1.7").toString(), gas: teraToGas("300") });
+    const failures = (raw.receipts_outcome || []).filter((r) => r.outcome.status && r.outcome.status.Failure);
+    for (const f of failures) console.error("  receipt failed:", f.outcome.executor_id, JSON.stringify(f.outcome.status.Failure));
+    for (const r of raw.receipts_outcome || []) for (const l of r.outcome.logs || []) if (!l.startsWith("EVENT_JSON")) console.log("  log:", l);
+    const sv = raw.status && raw.status.SuccessValue;
+    const ok = sv !== undefined && Buffer.from(sv, "base64").toString() === "true";
+    check(ok, `${symbol} launched at ${coinId}`);
     const s = await view(coinId, "get_status");
     check(s.creator === acc.dev.accountId && s.keeper === acc.dev.accountId, `${symbol} creator and keeper is ${acc.dev.accountId}`);
     for (const h of ["alice", "bob", "carol", "whale"]) await call(acc[h], coinId, "storage_deposit", {}, nearToYocto("0.00125").toString());
