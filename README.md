@@ -13,6 +13,9 @@ on-chain lore.
 > Built at NEAR HACKATHON (November 2026).
 > Tracks: **Memecoins With Mechanics** (primary), **Social Money** (Sputnik DAO as the steward).
 
+**Try it now, no wallet:** [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) opens in demo mode
+(a simulator with the same rules). Open **Nine Lives** and click the story buttons in order.
+
 ## Why
 
 When a memecoin's dev walks away, holders often run a *community takeover*
@@ -62,50 +65,66 @@ The quorum compares Yes weight with **all** eligible weight. The contract keeps
 a running `Σ balance × since`, so the total is one multiplication, whether the
 coin has 10 holders or 10 million.
 
+## The app
+
+| Page | What it shows |
+| --- | --- |
+| **Flatline Watch** | Every coin from the factory, open takeovers first, then dead coins, then whoever is closest to death. |
+| **Launch** | A form that calls the factory: name, supply, locked share, pulse interval, vote length, quorum, penalty, treasury seed. |
+| **Coin · Monitor** | A live heart monitor (green alive, red flatlined, amber voting), countdown, lives, treasury, the takeover vote and the keeper. |
+| **Coin · Verify** | Six checks read live from NEAR RPC: no access keys on the coin, same code hash as the factory (with the hex to compare against CI), factory locked, treasury backed, supply adds up, keeper is a DAO. |
+| **Coin · Lore** | Every birth, death, takeover, comeback and revival, from the contract. |
+
+Every number is a direct RPC read. There is no indexer or backend.
+
 ## How we used NEAR
 
 | NEAR feature | Use in Revive |
 | --- | --- |
 | NEP-141 / 145 / 148 / 297 | Full fungible token with storage registration, metadata and events (`nep141` plus a `revive` event standard). |
+| Factory sub-accounts | `revive.<you>` launches every coin as `<name>.revive.<you>` with the same stored code. Coin accounts are created with no keys. |
 | Sputnik DAO | A revived coin's keeper is a Sputnik DAO. The DAO pulses, spends and updates links through FunctionCall proposals ([scripts/dao-pulse.md](scripts/dao-pulse.md)). |
 | Named accounts | Stewards are checked by account suffix: only accounts created by the Sputnik factory can be nominated. |
-| Access keys | The deploy script deletes the coin account's full-access key, so nobody can change the code. |
+| Access keys | Coins never get a key; the factory's key is deleted after the code is stored, so nobody can change how coins are made. |
 | `ft_transfer_call` | Works with Rhea pools and other receivers; refunds keep hold time. |
 
 ## Run it
 
-**Tests (no network needed):**
+**Unit tests (no network):**
 
 ```bash
-cd contract
-cargo test
+(cd contract && cargo test)   # 21 tests
+(cd factory && cargo test)    # 6 tests
 ```
 
-19 unit tests cover the full lifecycle: launch, pulses, flatline, takeover, the
-whale-buys-after-death attack, double voting through a second wallet, comeback
-during a vote, blocked comeback after the vote, failed votes, quorum, the
-Sputnik-only steward rule, spend caps, two deaths and two revivals, DEX refunds
-keeping hold time, and the running total matching a per-holder sum.
+The coin tests cover the full lifecycle: launch, pulses, flatline, takeover,
+the whale-buys-after-death attack, double voting through a second wallet,
+comeback during a vote, blocked comeback after the vote, failed votes, quorum,
+the Sputnik-only steward rule, spend caps, two deaths and two revivals, DEX
+refunds keeping hold time, the running total matching a per-holder sum, and
+only the parent factory naming a creator.
 
-**The page, in demo mode:** open `web/index.html` in a browser. With no
-`?contract=` parameter it runs a simulated contract with the same rules, plus
-a scripted story (dev goes silent → whale buys → takeover → whale's vote
-rejected → revival → DAO pulses).
+**End-to-end on a real NEAR node:** CI starts a local NEAR sandbox and runs
+[scripts/demo-coins.mjs](scripts/demo-coins.mjs): it deploys the factory, stores
+the code, deletes the factory's key, launches two coins and plays both stories
+with real wasm and a real clock, checking every step:
 
-**The page, against testnet:** `web/index.html?contract=nine.you.testnet`
-reads the live contract over RPC and signs with
-[NEAR Connect](https://github.com/hot-dao/near-connect).
-
-**Deploy your own coin to testnet** (needs [near-cli-rs](https://near.cli.rs) and
-[cargo-near](https://github.com/near/cargo-near)):
+* **$NINE**: the dev goes silent, a whale buys 250M after the death and is refused a vote, holders vote a steward in, the coin revives, 100M creator tokens burn, the old dev can no longer pulse, the steward pulses.
+* **$BACK**: the dev goes silent, a takeover opens, a late pulse without the penalty is refused, the dev pays the 0.2 NEAR penalty, the vote is cancelled and the penalty lands in the treasury.
 
 ```bash
-CREATOR=you.testnet COIN=nine.you.testnet ./scripts/deploy-testnet.sh
+cd scripts && npm install && cd ..
+node scripts/sandbox-e2e.mjs      # needs the two wasm files from CI or cargo near build
 ```
 
-The script uses 2-minute pulses and 2-minute votes so the whole story can be
-played live. CI ([.github/workflows/contract.yml](.github/workflows/contract.yml))
-runs the tests and clippy, builds the wasm, and prints its SHA-256.
+**The same stories on testnet:** run the **testnet-demo** workflow (Actions tab)
+after adding `NEAR_ACCOUNT_ID` and `NEAR_PRIVATE_KEY` secrets for a funded
+testnet account (about 10 NEAR). It uploads `demo-coins.json` with the factory
+and coin names. Pass an existing Sputnik DAO as `steward` to nominate a real DAO.
+
+**The app:** open `web/index.html` (demo mode), or `?factory=revive-xxxxx.you.testnet`
+for live testnet data. Wallet signing uses [NEAR Connect](https://github.com/hot-dao/near-connect).
+The site is published to GitHub Pages on every push.
 
 ## Contract API
 
@@ -123,30 +142,42 @@ runs the tests and clippy, builds the wasm, and prints its SHA-256.
 | `get_status`, `get_vote_weight`, `get_ballot`, `get_lore`, `get_lore_count` | view | |
 | NEP-141 / NEP-145 methods | | `ft_balance_of(<contract>)` returns the creator's locked tokens. |
 
+**Factory**
+
+| Method | Who | Notes |
+| --- | --- | --- |
+| `new(owner)` | deployer | |
+| `store_code()` | owner, once | The coin wasm as raw input. Can never change afterwards. |
+| `launch(name, config)` | anyone | Attach ≥ 1.5 NEAR (300 TGas). Creates `<name>.<factory>`; the caller becomes creator and keeper; extra NEAR seeds the treasury. Refunds if the launch fails. |
+| `get_coins`, `get_coin_count`, `get_code_hash`, `get_owner` | view | |
+
 ## Limits (honest list)
 
 * **Off-chain assets don't move.** The contract can't take over the dev's X account, Telegram or website. Revive moves what lives on-chain: the keeper role, treasury, links, metadata icon and the dev's tokens. Takeover teams may also face IP questions about the original art ([Decrypt](https://decrypt.co/247781/meme-coin-takeover-teams-face-legal-entanglement-experts-say)).
 * **Hold-time is not identity.** A patient attacker can buy early and wait. Revive stops *buying a vote after the death*; it does not stop someone who planned ahead.
 * **Quorum is slightly lenient.** Accounts whose tokens are mostly post-flatline count as negative in the running total, which makes the eligible total a little smaller than the sum of positive weights.
-* **`new` is open until called.** Deploy and launch in one go, as the script does.
+* **Demo stewards.** Without a `steward` input, the demo workflow uses a stand-in steward account (its own namespace, nominated by suffix) instead of a Sputnik DAO, because creating a DAO costs several testnet NEAR. Real coins launched from the app require `.sputnikv2.testnet` / `.sputnik-dao.near`.
+* **Storage.** Each launch reserves 1.5 NEAR for the coin's code and state.
 * **Treasury transfers to accounts that don't exist** are refunded to the contract's balance, but not re-added to the `treasury` counter.
 * **Unaudited.** Testnet only. The wasm is built in CI; the build is not yet reproducible (`cargo near build reproducible-wasm` is the next step).
 
 ## Repository layout
 
 ```
-contract/            Rust contract (near-sdk 5.30)
+contract/            the coin (near-sdk 5.30)
   src/lib.rs         state, keeper, takeover, revival, views
   src/token.rs       NEP-141 / 145 / 148 and hold-time accounting
-  src/tests.rs       19 unit tests
-web/index.html       the coin page: heart monitor, takeover, lore, demo mode
-scripts/             testnet deploy script, Sputnik DAO how-to
+  src/tests.rs       21 unit tests
+factory/             launches coins as <name>.<factory>; 6 unit tests
+web/index.html       the app: Flatline Watch, Launch, coin Monitor / Verify / Lore, demo mode
+scripts/             demo-coins.mjs (deploy + both stories), sandbox-e2e.mjs, Sputnik DAO how-to
+.github/workflows/   CI (tests, lints, wasm, sandbox e2e), Pages, testnet-demo
 ```
 
 ## Hackathon notes
 
 * All code was written during NEAR HACKATHON (1–14 November 2026); the first commit is from 8 November 2026.
-* Libraries: near-sdk 5.30, NEAR Connect 0.12 (loaded from esm.sh). No templates.
+* Libraries: near-sdk 5.30, near-api-js 7.4, near-sandbox 0.3, NEAR Connect 0.12 (loaded from esm.sh). No templates.
 
 ## License
 

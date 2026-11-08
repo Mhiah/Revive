@@ -1,0 +1,65 @@
+name: testnet-demo
+
+# Run by hand (Actions → testnet-demo → Run workflow). Needs two repository
+# secrets for a funded testnet account (about 10 NEAR):
+#   NEAR_ACCOUNT_ID   e.g. revive-demo.testnet
+#   NEAR_PRIVATE_KEY  ed25519:...
+# Deploys the factory and two demo coins, plays both stories live, and
+# uploads demo-coins.json with the account names (no keys).
+on:
+  workflow_dispatch:
+    inputs:
+      steward:
+        description: "Existing Sputnik DAO to nominate (optional, e.g. ninelives.sputnikv2.testnet)"
+        required: false
+      timer:
+        description: "Pulse interval and vote length in seconds (min 60)"
+        default: "60"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Cache cargo-near
+        id: cache-cargo-near
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-near
+          key: cargo-near-${{ runner.os }}-v1
+      - name: Install cargo-near
+        if: steps.cache-cargo-near.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          if ! curl --proto '=https' --tlsv1.2 -LsSf --retry 5 --retry-all-errors \
+              https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh; then
+            sudo apt-get update -q && sudo apt-get install -yq libudev-dev pkg-config
+            cargo install cargo-near --locked
+          fi
+      - name: Build wasm
+        run: |
+          (cd contract && cargo near build non-reproducible-wasm)
+          (cd factory && cargo near build non-reproducible-wasm)
+          sha256sum contract/target/near/revive.wasm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Deploy and play both stories on testnet
+        env:
+          NEAR_ACCOUNT_ID: ${{ secrets.NEAR_ACCOUNT_ID }}
+          NEAR_PRIVATE_KEY: ${{ secrets.NEAR_PRIVATE_KEY }}
+          STEWARD: ${{ inputs.steward }}
+          DAO_SUFFIX: ${{ inputs.steward && '.sputnikv2.testnet' || '' }}
+          TIMER: ${{ inputs.timer }}
+        run: |
+          cd scripts && npm install --no-audit --no-fund && cd ..
+          node scripts/demo-coins.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-coins
+          path: demo-coins.json
+          if-no-files-found: ignore

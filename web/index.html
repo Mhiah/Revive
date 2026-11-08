@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Revive — the coin its dev can't kill</title>
+<title>Revive — the memecoin its dev can't kill</title>
+<meta name="description" content="Revive: NEAR memecoins with a community takeover built into the contract.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -16,10 +17,13 @@
   body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
   body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 10;
     background: repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 1px, transparent 1px 3px); }
-  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid var(--line); }
-  .brand { font-family: var(--mono); font-weight: 800; letter-spacing: .2em; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 24px; border-bottom: 1px solid var(--line); }
+  .brand { font-family: var(--mono); font-weight: 800; letter-spacing: .2em; color: var(--text); text-decoration: none; }
   .brand span { color: var(--accent, var(--alive)); }
-  .net { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-right: 12px; }
+  nav { display: flex; gap: 4px; }
+  nav a { font-family: var(--mono); font-size: 13px; color: var(--dim); text-decoration: none; padding: 8px 12px; border-radius: 6px; }
+  nav a.on, nav a:hover { color: var(--text); background: var(--panel); }
+  .net { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-right: 10px; }
   button { font-family: var(--mono); font-size: 13px; font-weight: 600; background: transparent; color: var(--text);
     border: 1px solid var(--line); padding: 10px 14px; border-radius: 6px; cursor: pointer; }
   button:hover:not(:disabled) { border-color: var(--accent, var(--alive)); color: var(--accent, var(--alive)); }
@@ -28,11 +32,32 @@
   button.primary:hover:not(:disabled) { filter: brightness(1.1); color: #041008; }
   input, select { font-family: var(--mono); font-size: 13px; background: #050708; color: var(--text); border: 1px solid var(--line);
     padding: 10px; border-radius: 6px; width: 100%; }
+  label.f { display: grid; gap: 6px; font-size: 13px; }
+  label.f span { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
   main { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; grid-template-columns: 1.6fr 1fr; }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; } }
+  .full { grid-column: 1 / -1; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
   .label { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
-  .monitor { grid-column: 1 / -1; position: relative; overflow: hidden; }
+  .hero h1 { font-size: 44px; line-height: 1.05; margin: 6px 0 10px; }
+  .hero h1 em { font-style: normal; color: var(--alive); }
+  .hero p { color: var(--dim); max-width: 640px; line-height: 1.55; margin: 0; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } .hero h1 { font-size: 32px; } }
+  .stat .v { font-family: var(--mono); font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .coins { display: grid; gap: 8px; margin-top: 14px; }
+  .coinrow { display: grid; grid-template-columns: 14px 1.4fr 1fr 1fr .7fr; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line);
+    border-radius: 8px; text-decoration: none; color: var(--text); background: #0a0e10; }
+  .coinrow:hover { border-color: var(--c); }
+  @media (max-width: 700px) { .coinrow { grid-template-columns: 14px 1fr 1fr; } .coinrow .hide-sm { display: none; } }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
+  .dot.beat { animation: beat 1s infinite; }
+  @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.5); } 30% { transform: scale(1); } }
+  .coinrow b { font-size: 16px; }
+  .coinrow small { font-family: var(--mono); color: var(--dim); margin-left: 6px; }
+  .chip { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--c); }
+  .mono { font-family: var(--mono); font-size: 13px; }
+  .monitor { position: relative; overflow: hidden; }
   .monitor-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
   .coin { font-size: 26px; font-weight: 700; }
   .coin small { font-family: var(--mono); color: var(--dim); font-size: 14px; margin-left: 8px; }
@@ -41,9 +66,12 @@
   @keyframes blink { 50% { opacity: .25; } }
   canvas { width: 100%; height: 170px; display: block; margin: 14px 0 6px; }
   .readouts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  @media (max-width: 600px) { .readouts { grid-template-columns: repeat(2, 1fr); } .status { font-size: 30px; } }
+  @media (max-width: 600px) { .readouts { grid-template-columns: repeat(2, 1fr); } .status { font-size: 28px; } }
   .readout .v { font-family: var(--mono); font-size: 20px; font-weight: 600; margin-top: 4px; }
   .lives { color: var(--dead); letter-spacing: 2px; }
+  .tabs { display: flex; gap: 6px; margin-top: 16px; border-bottom: 1px solid var(--line); }
+  .tabs a { font-family: var(--mono); font-size: 13px; padding: 10px 14px; color: var(--dim); text-decoration: none; border-bottom: 2px solid transparent; }
+  .tabs a.on { color: var(--text); border-color: var(--accent); }
   .row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
   .row:last-child { border-bottom: 0; }
   .row b { font-family: var(--mono); font-weight: 600; text-align: right; word-break: break-all; }
@@ -52,12 +80,18 @@
   .bar .q { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
   .stack { display: grid; gap: 10px; margin-top: 12px; }
-  .lore { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } }
+  .lore { list-style: none; margin: 0; padding: 0; }
   .lore li { padding: 10px 0 10px 16px; border-left: 2px solid var(--line); position: relative; font-size: 14px; }
   .lore li::before { content: ""; position: absolute; left: -6px; top: 15px; width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--dim)); }
   .lore .k { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--c, var(--dim)); }
   .lore .t { font-family: var(--mono); font-size: 11px; color: var(--dim); float: right; }
-  .director { grid-column: 1 / -1; border-style: dashed; }
+  .check { display: grid; grid-template-columns: 28px 1fr; gap: 10px; padding: 12px 0; border-bottom: 1px dashed var(--line); }
+  .check:last-child { border-bottom: 0; }
+  .check .i { font-family: var(--mono); font-weight: 800; font-size: 16px; }
+  .check .d { color: var(--dim); font-size: 13px; margin-top: 4px; line-height: 1.5; word-break: break-all; }
+  .director { border-style: dashed; }
   .steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-top: 12px; }
   .steps button { text-align: left; }
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111a18; border: 1px solid var(--accent);
@@ -68,84 +102,47 @@
   .flash { position: absolute; inset: 0; background: var(--alive); opacity: 0; pointer-events: none; }
   .flash.go { animation: flash 1.2s ease-out; }
   @keyframes flash { 0% { opacity: .55; } 100% { opacity: 0; } }
-  .hint { color: var(--dim); font-size: 13px; line-height: 1.5; }
+  .hint { color: var(--dim); font-size: 13px; line-height: 1.55; }
+  .steps-how { counter-reset: s; display: grid; gap: 14px; margin-top: 12px; }
+  .steps-how div { counter-increment: s; padding-left: 44px; position: relative; line-height: 1.55; }
+  .steps-how div::before { content: counter(s); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--alive); color: var(--alive); font-family: var(--mono); display: grid; place-items: center; font-size: 13px; }
   a { color: var(--dao); }
+  .empty { padding: 30px; text-align: center; color: var(--dim); border: 1px dashed var(--line); border-radius: 8px; }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">RE<span>VIVE</span></div>
+  <a class="brand" href="#/">RE<span>VIVE</span></a>
+  <nav>
+    <a href="#/" data-nav="watch">Flatline Watch</a>
+    <a href="#/launch" data-nav="launch">Launch</a>
+    <a href="#/how" data-nav="how">How it works</a>
+  </nav>
   <div><span class="net" id="net"></span><button id="connect">Connect wallet</button></div>
 </header>
-
-<main>
-  <section class="panel monitor">
-    <div class="flash" id="flash"></div>
-    <div class="monitor-top">
-      <div>
-        <div class="label">Patient</div>
-        <div class="coin" id="coin">—</div>
-      </div>
-      <div style="text-align:right">
-        <div class="label">Status</div>
-        <div class="status" id="status">…</div>
-      </div>
-    </div>
-    <canvas id="ecg"></canvas>
-    <div class="readouts">
-      <div class="readout"><div class="label" id="deadline-label">Next pulse due</div><div class="v" id="deadline">—</div></div>
-      <div class="readout"><div class="label">Lives</div><div class="v lives" id="lives">—</div></div>
-      <div class="readout"><div class="label">Treasury</div><div class="v" id="treasury">—</div></div>
-      <div class="readout"><div class="label">Supply</div><div class="v" id="supply">—</div></div>
-    </div>
-  </section>
-
-  <section class="panel" id="takeover-panel">
-    <div class="label">Takeover</div>
-    <div id="takeover"></div>
-  </section>
-
-  <section class="panel">
-    <div class="label">Keeper</div>
-    <div id="keeper"></div>
-  </section>
-
-  <section class="panel">
-    <div class="label">Lore — every death and revival, on-chain</div>
-    <ul class="lore" id="lore"></ul>
-  </section>
-
-  <section class="panel">
-    <div class="label">How it works</div>
-    <p class="hint">The keeper must <b>pulse</b> on-chain before every deadline. Miss it and the coin <b>flatlines</b>.
-      Holders who held <i>before</i> the flatline can vote a Sputnik DAO in as the new keeper. Tokens bought after the death count for nothing.
-      If the vote passes, the creator's locked tokens burn, the treasury and links go to the DAO, and the coin gains a life.
-      A late keeper can come back during the vote, but pays a penalty into the treasury.</p>
-  </section>
-
-  <section class="panel director" id="director" hidden>
-    <div class="label">Demo mode — simulated contract, same rules</div>
-    <p class="hint">You are acting as <select id="actor" style="width:auto;display:inline-block"></select>. Run the story in order, or play any actor yourself.</p>
-    <div class="steps" id="steps"></div>
-  </section>
-</main>
+<main id="view"></main>
 <div class="toast" id="toast"></div>
 
 <script type="module">
-// ----------------------------------------------------------------- config
+// ================================================================= config
 const params = new URLSearchParams(location.search);
-const CONTRACT_ID = params.get("contract") || "";          // e.g. ?contract=nine.revive.testnet
 const NETWORK = params.get("network") || "testnet";
+// Set after the testnet deploy (scripts/demo-coins.mjs prints it); ?factory= overrides.
+const DEFAULT_FACTORY = "";
+const FACTORY_ID = params.get("factory") || DEFAULT_FACTORY;
+const LEGACY_COIN = params.get("contract");                 // old single-coin links
+const DEMO = params.has("demo") || (!FACTORY_ID && !LEGACY_COIN);
 const RPCS = NETWORK === "mainnet"
   ? ["https://free.rpc.fastnear.com", "https://near.drpc.org"]
   : ["https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"];
-const DEMO = !CONTRACT_ID || params.has("demo");
-const TGAS = "30000000000000";
-
+const EXPLORER = NETWORK === "mainnet" ? "https://nearblocks.io" : "https://testnet.nearblocks.io";
+const REPO = "https://github.com/Mhiah/Revive";
+const TGAS30 = "30000000000000", TGAS300 = "300000000000000";
 const YOCTO_NEAR = 10n ** 24n, YOCTO_TOKEN = 10n ** 18n, DAY = 86400;
 const $ = (id) => document.getElementById(id);
 
-// ---------------------------------------------------------------- format
+// ================================================================ format
 function fmtTokens(y) {
   const n = Number(BigInt(y) / YOCTO_TOKEN);
   if (n >= 1e9) return (n / 1e9).toFixed(2).replace(/\.00$/, "") + "B";
@@ -164,88 +161,123 @@ function fmtDur(s) {
   if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
   return `${m}m ${String(sec).padStart(2, "0")}s`;
 }
-// Weight is micro-tokens x seconds; show it as token-days.
-function fmtWeight(w) {
+function fmtWeight(w) {          // micro-tokens x seconds, shown as token-days
   const td = Number(BigInt(w) / 1_000_000n) / DAY;
   if (td >= 1e9) return (td / 1e9).toFixed(2) + "B token-days";
   if (td >= 1e6) return (td / 1e6).toFixed(1) + "M token-days";
   if (td >= 1e3) return (td / 1e3).toFixed(1) + "K token-days";
   return td.toFixed(1) + " token-days";
 }
-const short = (a) => a && a.length > 28 ? a.slice(0, 12) + "…" + a.slice(-12) : a;
+const short = (a) => a && a.length > 30 ? a.slice(0, 13) + "…" + a.slice(-13) : a;
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function toast(msg, err = false) {
   const t = $("toast"); t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
-  clearTimeout(toast.h); toast.h = setTimeout(() => t.className = "toast", 3200);
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.className = "toast", 3400);
+}
+const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+function b58ToHex(s) {
+  let n = 0n; for (const c of s) n = n * 58n + BigInt(B58.indexOf(c));
+  let hex = n.toString(16); if (hex.length % 2) hex = "0" + hex;
+  for (const c of s) { if (c === "1") hex = "00" + hex; else break; }
+  return hex.padStart(64, "0");
 }
 
-// ------------------------------------------------------- live source (RPC)
-async function rpcView(method, args = {}) {
-  const body = { jsonrpc: "2.0", id: "revive", method: "query", params: {
-    request_type: "call_function", finality: "optimistic", account_id: CONTRACT_ID,
-    method_name: method, args_base64: btoa(JSON.stringify(args)) } };
+// ============================================================ live (RPC)
+async function rpc(params) {
   let lastErr;
   for (const url of RPCS) {
     try {
-      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: "revive", method: "query", params: { finality: "optimistic", ...params } }) });
       const j = await r.json();
-      if (j.error) throw new Error(j.error.data || j.error.message);
-      if (j.result.error) throw new Error(j.result.error);
-      return JSON.parse(new TextDecoder().decode(new Uint8Array(j.result.result)));
+      if (j.error) throw new Error(j.error.data || j.error.cause?.name || j.error.message);
+      if (j.result?.error) throw new Error(j.result.error);
+      return j.result;
     } catch (e) { lastErr = e; }
   }
   throw lastErr;
 }
+async function view(account_id, method_name, args = {}) {
+  const r = await rpc({ request_type: "call_function", account_id, method_name, args_base64: btoa(JSON.stringify(args)) });
+  return JSON.parse(new TextDecoder().decode(new Uint8Array(r.result)));
+}
+const viewAccount = (account_id) => rpc({ request_type: "view_account", account_id });
+const viewKeys = (account_id) => rpc({ request_type: "view_access_key_list", account_id }).then((r) => r.keys || []);
 
 let connector = null, account = null;
 async function setupWallet() {
   const { NearConnector } = await import("https://esm.sh/@hot-labs/near-connect@0.12.0");
   connector = new NearConnector({ network: NETWORK });
-  connector.on("wallet:signIn", (t) => { account = t.accounts[0].accountId; refresh(); });
-  connector.on("wallet:signOut", () => { account = null; refresh(); });
+  connector.on("wallet:signIn", (t) => { account = t.accounts[0].accountId; render(); });
+  connector.on("wallet:signOut", () => { account = null; render(); });
   try { const w = await connector.wallet(); const accs = await w.getAccounts(); account = accs[0]?.accountId || null; } catch {}
 }
+async function sendTx(receiverId, methodName, args, deposit = "0", gas = TGAS30) {
+  if (!account) { await connector.connect(); throw new Error("connect a wallet first"); }
+  const w = await connector.wallet();
+  return w.signAndSendTransaction({ receiverId, actions: [{ type: "FunctionCall", params: { methodName, args, gas, deposit } }] });
+}
 
-const live = {
-  status: () => rpcView("get_status"),
-  lore: async () => { const n = await rpcView("get_lore_count"); return rpcView("get_lore", { from_index: Math.max(0, n - 50), limit: 50 }); },
-  weight: (a) => rpcView("get_vote_weight", { account_id: a }),
-  ballot: (a) => rpcView("get_ballot", { account_id: a }),
-  balance: (a) => rpcView("ft_balance_of", { account_id: a }),
-  me: () => account,
-  async call(method, args = {}, deposit = "0") {
-    if (!account) { await connector.connect(); throw new Error("connect a wallet first"); }
-    const w = await connector.wallet();
-    await w.signAndSendTransaction({ receiverId: CONTRACT_ID, actions: [
-      { type: "FunctionCall", params: { methodName: method, args, gas: TGAS, deposit } }] });
+const liveRegistry = {
+  async coins() {
+    if (LEGACY_COIN && !FACTORY_ID) return [{ account_id: LEGACY_COIN }];
+    const n = await view(FACTORY_ID, "get_coin_count");
+    const out = [];
+    for (let i = 0; i < n; i += 100) out.push(...await view(FACTORY_ID, "get_coins", { from_index: i, limit: 100 }));
+    return out;
   },
+  async launch(name, config, deposit) { return sendTx(FACTORY_ID, "launch", { name, config }, deposit, TGAS300); },
+  coin: (id) => liveCoin(id),
 };
+function liveCoin(id) {
+  return {
+    id,
+    status: () => view(id, "get_status"),
+    lore: async () => { const n = await view(id, "get_lore_count"); return view(id, "get_lore", { from_index: Math.max(0, n - 100), limit: 100 }); },
+    weight: (a) => view(id, "get_vote_weight", { account_id: a }),
+    ballot: (a) => view(id, "get_ballot", { account_id: a }),
+    me: () => account,
+    call: (method, args = {}, deposit = "0") => sendTx(id, method, args, deposit),
+    async verify() {
+      const parent = id.split(".").slice(1).join(".");
+      const [acc, keys, meta, supply, factoryHash, factoryKeys] = await Promise.all([
+        viewAccount(id), viewKeys(id), view(id, "ft_metadata"), view(id, "ft_total_supply"),
+        view(parent, "get_code_hash").catch(() => null), viewKeys(parent).catch(() => null)]);
+      return { code_hash: acc.code_hash, balance: acc.amount, keys: keys.length, meta, supply, factory: parent, factory_code_hash: factoryHash, factory_keys: factoryKeys?.length ?? null };
+    },
+  };
+}
 
-// -------------------------------------------------- demo source (simulated)
-// Mirrors the contract's rules so the story can be shown without a wallet.
+// =========================================================== demo (mock)
+// A simulated contract with the same rules, so the story can be shown with no wallet.
+const CLOCK = { t: 1_800_000_000 };
+const T = (n) => BigInt(Math.round(n)) * YOCTO_TOKEN;
+const FAKE_HASH = "4mR8cMQh2B1Qb3uH9Yz1fWJxQ6bEvKXwXpN5d9a7TtqS";
 class Mock {
-  constructor() { this.reset(); }
+  constructor(o) { this.o = o; this.reset(); }
+  get t() { return CLOCK.t; }
   reset() {
-    const t = 1_800_000_000;
-    this.t = t; this.keeper = "dev.testnet"; this.creator = "dev.testnet";
-    this.cfg = { name: "Nine Lives", symbol: "NINE", pulse_interval_secs: 3 * DAY, vote_duration_secs: DAY, quorum_bps: 2000,
+    const o = this.o, t = this.t;
+    this.id = o.id; this.keeper = "dev.testnet"; this.creator = "dev.testnet";
+    this.cfg = { name: o.name, symbol: o.symbol, pulse_interval_secs: o.interval || 3 * DAY, vote_duration_secs: DAY, quorum_bps: 2000,
       comeback_penalty: (2n * YOCTO_NEAR).toString(), dao_suffix: ".sputnikv2.testnet", spend_cap: YOCTO_NEAR.toString() };
-    this.lastPulse = t; this.lives = 0; this.treasury = 5n * YOCTO_NEAR; this.count = 0;
-    this.supply = 1_000_000_000n * YOCTO_TOKEN; this.devLocked = 100_000_000n * YOCTO_TOKEN; this.devBurned = 0n; this.devActive = true;
-    const T = (n) => BigInt(n) * YOCTO_TOKEN;
-    this.holders = { "dev.testnet": { bal: T(300e6), since: t }, "alice.testnet": { bal: T(300e6), since: t },
-      "bob.testnet": { bal: T(200e6), since: t }, "carol.testnet": { bal: T(100e6), since: t }, "whale.testnet": { bal: 0n, since: t } };
+    this.born = t - (o.age || 0); this.lastPulse = t - (o.sincePulse || 0); this.lives = 0; this.treasury = 5n * YOCTO_NEAR; this.count = 0;
+    this.supply = T(1e9); this.devLocked = T(1e8); this.devBurned = 0n; this.devActive = true;
+    const s = this.born;
+    this.holders = { "dev.testnet": { bal: T(3e8), since: s }, "alice.testnet": { bal: T(3e8), since: s },
+      "bob.testnet": { bal: T(2e8), since: s }, "carol.testnet": { bal: T(1e8), since: s }, "whale.testnet": { bal: 0n, since: s } };
     this.takeover = null; this.ballots = {}; this.loreList = [];
-    this.log("born", "dev.testnet", "NINE launched by dev.testnet");
+    this.log("born", "dev.testnet", `${o.symbol} launched by dev.testnet`, this.born);
+    (o.setup || (() => {}))(this);
   }
-  log(kind, actor, note) { this.loreList.push({ at: this.t, kind, actor, note }); }
+  log(kind, actor, note, at = this.t) { this.loreList.push({ at, kind, actor, note }); }
   flatlineAt() { return this.lastPulse + this.cfg.pulse_interval_secs; }
   st() { if (this.takeover) return this.t >= this.takeover.ends_at ? "vote_closed" : "voting"; return this.t > this.flatlineAt() ? "flatlined" : "alive"; }
   w(a, f) { const h = this.holders[a]; return h && h.since < f ? h.bal / 10n ** 12n * BigInt(f - h.since) : 0n; }
   eligible(f) { return Object.keys(this.holders).filter((a) => a !== this.keeper && a !== this.creator).reduce((s, a) => s + this.w(a, f), 0n); }
   fail(m) { throw new Error(m); }
-  advance(s) { this.t += s; }
   buy(a, tokens) {
-    const amt = BigInt(tokens) * YOCTO_TOKEN, src = this.holders["dev.testnet"], h = this.holders[a];
+    const amt = T(tokens), src = this.holders["dev.testnet"], h = this.holders[a];
     src.bal -= amt; const nb = h.bal + amt; h.since = Number((h.bal * BigInt(h.since) + amt * BigInt(this.t) + nb - 1n) / nb); h.bal = nb;
   }
   pulse(by, deposit = 0n) {
@@ -295,16 +327,16 @@ class Mock {
   }
   // source interface
   async status() {
+    const circ = Object.values(this.holders).reduce((s, h) => s + h.bal, 0n);
     return { status: this.st(), now: this.t, keeper: this.keeper, creator: this.creator, lives: this.lives, last_pulse: this.lastPulse,
-      flatline_at: this.flatlineAt(), total_supply: this.supply.toString(), treasury: this.treasury.toString(),
+      flatline_at: this.flatlineAt(), total_supply: this.supply.toString(), circulating: circ.toString(), treasury: this.treasury.toString(),
       dev_locked: this.devLocked.toString(), dev_burned: this.devBurned.toString(), takeover: this.takeover && { ...this.takeover },
-      takeover_count: this.count, config: this.cfg, links: "x.com/ninelives" };
+      takeover_count: this.count, config: this.cfg, links: REPO };
   }
-  async lore() { return this.loreList.slice(-50); }
+  async lore() { return this.loreList.slice(-100); }
   async weight(a) { if (a === this.keeper || a === this.creator) return "0"; return this.w(a, this.takeover ? this.takeover.flatline_at : this.flatlineAt()).toString(); }
   async ballot(a) { return this.takeover ? this.ballots[this.takeover.id + a] || null : null; }
-  async balance(a) { return (this.holders[a]?.bal || 0n).toString(); }
-  me() { return $("actor").value; }
+  me() { return ACTOR.value; }
   async call(method, args = {}, deposit = "0") {
     const by = this.me();
     if (method === "pulse") return this.pulse(by, BigInt(deposit));
@@ -313,124 +345,387 @@ class Mock {
     if (method === "finalize_takeover") { const ok = this.finalize(); if (ok) revivedFx(); return ok; }
     this.fail("not in the demo: " + method);
   }
+  async verify() {
+    const circ = Object.values(this.holders).reduce((s, h) => s + h.bal, 0n);
+    return { code_hash: FAKE_HASH, balance: (this.treasury + 15n * YOCTO_NEAR / 10n).toString(), keys: 0, supply: this.supply.toString(),
+      meta: { spec: "ft-1.0.0", decimals: 18 }, factory: "revive.testnet", factory_code_hash: FAKE_HASH, factory_keys: 0, circ };
+  }
 }
 
-const src = DEMO ? new Mock() : live;
+const ACTOR = { value: "alice.testnet" };
+const MOCKS = [
+  new Mock({ id: "nine.revive.testnet", name: "Nine Lives", symbol: "NINE", age: 4 * DAY, sincePulse: 2 * 3600 }),
+  new Mock({ id: "ghost.revive.testnet", name: "Ghost Dog", symbol: "GHOST", age: 9 * DAY, sincePulse: 3 * DAY + 5 * 3600 }),
+  new Mock({ id: "rug.revive.testnet", name: "Rugsy", symbol: "RUGS", age: 12 * DAY, sincePulse: 3 * DAY + 2 * 3600,
+    setup: (m) => { CLOCK.t -= 3600; m.startTakeover("bob.testnet", "rugsy.sputnikv2.testnet"); m.vote("bob.testnet", true); m.vote("carol.testnet", true); CLOCK.t += 3600; } }),
+  new Mock({ id: "back.revive.testnet", name: "Back From The Dead", symbol: "BACK", age: 20 * DAY, sincePulse: 3600,
+    setup: (m) => { m.log("comeback", "dev.testnet", "came back 6h 12m late and paid 2.00 Ⓝ; takeover #1 cancelled", m.t - 3600); m.treasury += 2n * YOCTO_NEAR; } }),
+  new Mock({ id: "phoenix.revive.testnet", name: "Phoenix", symbol: "PHNX", age: 60 * DAY, sincePulse: DAY,
+    setup: (m) => { m.keeper = "phoenix-two.sputnikv2.testnet"; m.lives = 2; m.devActive = false; m.devBurned = m.devLocked; m.supply -= m.devLocked; m.devLocked = 0n;
+      m.log("revived", "phoenix-one.sputnikv2.testnet", "life #1: keeper dev.testnet replaced by phoenix-one.sputnikv2.testnet; 100M creator tokens burned", m.t - 40 * DAY);
+      m.log("revived", "phoenix-two.sputnikv2.testnet", "life #2: keeper phoenix-one.sputnikv2.testnet replaced by phoenix-two.sputnikv2.testnet; 0 creator tokens burned", m.t - 9 * DAY); } }),
+];
+const demoRegistry = {
+  async coins() { return MOCKS.map((m) => ({ account_id: m.id, name: m.cfg.name, symbol: m.cfg.symbol, creator: m.creator })); },
+  async launch(name, config) {
+    const id = `${name}.revive.testnet`;
+    if (MOCKS.some((m) => m.id === id)) throw new Error("a coin with that name already exists");
+    const m = new Mock({ id, name: config.name, symbol: config.symbol, interval: config.pulse_interval_secs });
+    m.creator = m.keeper = "you.testnet"; MOCKS.push(m); return id;
+  },
+  coin: (id) => MOCKS.find((m) => m.id === id),
+};
+const REG = DEMO ? demoRegistry : liveRegistry;
 
-// ----------------------------------------------------------------- render
-let S = null;
+// ================================================================= views
 const COLORS = { alive: "--alive", flatlined: "--dead", voting: "--vote", vote_closed: "--vote" };
 const LABEL = { alive: "ALIVE", flatlined: "FLATLINED", voting: "TAKEOVER VOTE", vote_closed: "VOTE CLOSED" };
-const LORE_C = { born: "--alive", pulse: "--alive", comeback: "--vote", flatline: "--dead", takeover: "--vote",
-  takeover_failed: "--dead", revived: "--alive", spend: "--dao", links: "--dao" };
+const LORE_C = { born: "--alive", comeback: "--vote", flatline: "--dead", takeover: "--vote", takeover_failed: "--dead", revived: "--alive", spend: "--dao", links: "--dao" };
+const isDao = (a, s) => a.endsWith(s.config.dao_suffix);
+const setAccent = (status) => document.documentElement.style.setProperty("--accent", getComputedStyle(document.documentElement).getPropertyValue(COLORS[status] || "--alive"));
 
-async function refresh() {
-  try {
-    S = await src.status();
-  } catch (e) { $("status").textContent = "NO SIGNAL"; toast("Could not reach the contract: " + e.message, true); return; }
-  const me = src.me();
-  const accent = getComputedStyle(document.documentElement).getPropertyValue(COLORS[S.status]);
-  document.documentElement.style.setProperty("--accent", accent);
-  $("coin").innerHTML = `${S.config.name}<small>$${S.config.symbol}</small>`;
-  $("status").textContent = LABEL[S.status];
-  $("status").className = "status" + (S.status === "flatlined" ? " blink" : "");
-  const dead = S.now > S.flatline_at;
-  $("deadline-label").textContent = dead ? "Flatlined for" : "Next pulse due in";
-  $("deadline").textContent = fmtDur(dead ? S.now - S.flatline_at : S.flatline_at - S.now);
-  $("lives").textContent = S.lives ? "♥".repeat(Math.min(S.lives, 9)) + (S.lives > 9 ? ` ×${S.lives}` : "") : "0";
-  $("treasury").textContent = fmtNear(S.treasury);
-  $("supply").textContent = fmtTokens(S.total_supply);
-  $("net").textContent = DEMO ? "DEMO · simulated" : `${NETWORK} · ${short(CONTRACT_ID)}`;
-  $("connect").textContent = DEMO ? "Demo mode" : (me ? short(me) : "Connect wallet");
+function route() {
+  const h = location.hash.replace(/^#\/?/, "");
+  const [page, a, b] = h.split("/");
+  if (!page && LEGACY_COIN && !FACTORY_ID) return { page: "coin", id: LEGACY_COIN, tab: "monitor" };
+  if (page === "coin") return { page: "coin", id: decodeURIComponent(a || ""), tab: b || "monitor" };
+  return { page: page || "watch" };
+}
+
+let renderId = 0;
+async function render() {
+  const r = route(), my = ++renderId;
+  document.querySelectorAll("nav a").forEach((n) => n.classList.toggle("on", n.dataset.nav === r.page));
+  $("net").textContent = DEMO ? "DEMO · simulated" : `${NETWORK}${FACTORY_ID ? " · " + short(FACTORY_ID) : ""}`;
+  $("connect").textContent = DEMO ? "Demo mode" : (account ? short(account) : "Connect wallet");
   $("connect").disabled = DEMO;
+  try {
+    const html = r.page === "coin" ? await coinView(r) : r.page === "launch" ? launchView() : r.page === "how" ? howView() : await watchView();
+    if (my !== renderId) return;
+    $("view").innerHTML = html;
+    bind(r);
+  } catch (e) {
+    if (my !== renderId) return;
+    $("view").innerHTML = `<section class="panel full"><div class="status" style="--accent:var(--dead)">NO SIGNAL</div><p class="hint">${esc(e.message)}</p></section>`;
+  }
+}
 
-  const isKeeper = me === S.keeper;
-  $("keeper").innerHTML = `
-    <div class="row"><span>Keeper</span><b style="color:${S.keeper.endsWith(S.config.dao_suffix) ? "var(--dao)" : "inherit"}">${S.keeper}</b></div>
-    <div class="row"><span>Creator</span><b>${S.creator}</b></div>
+// ----------------------------------------------------------- Flatline Watch
+async function watchView() {
+  setAccent("alive");
+  const coins = await REG.coins();
+  const rows = await Promise.all(coins.map(async (c) => {
+    try { return { c, s: await REG.coin(c.account_id).status() }; } catch { return { c, s: null }; }
+  }));
+  const rank = { voting: 0, vote_closed: 0, flatlined: 1, alive: 2 };
+  rows.sort((x, y) => !x.s ? 1 : !y.s ? -1 : (rank[x.s.status] - rank[y.s.status]) ||
+    ((x.s.flatline_at - x.s.now) - (y.s.flatline_at - y.s.now)));
+  const live = rows.filter((r) => r.s);
+  const dead = live.filter((r) => r.s.status === "flatlined").length;
+  const votes = live.filter((r) => r.s.takeover).length;
+  const lives = live.reduce((n, r) => n + r.s.lives, 0);
+  const row = ({ c, s }) => {
+    if (!s) return `<div class="coinrow" style="--c:var(--dim)"><span class="dot"></span><span>${esc(c.account_id)}</span><span class="chip">unreachable</span></div>`;
+    const dl = s.status === "alive" ? `pulse due in ${fmtDur(s.flatline_at - s.now)}` : s.takeover ? (s.status === "vote_closed" ? "vote closed — finalize" : `vote ends in ${fmtDur(s.takeover.ends_at - s.now)}`) : `dead for ${fmtDur(s.now - s.flatline_at)} — take it over`;
+    return `<a class="coinrow" href="#/coin/${encodeURIComponent(c.account_id)}" style="--c:var(${COLORS[s.status]})">
+      <span class="dot ${s.status === "alive" ? "beat" : ""}"></span>
+      <span><b>${esc(s.config.name)}</b><small>$${esc(s.config.symbol)}</small></span>
+      <span class="chip">${LABEL[s.status]}</span>
+      <span class="mono hide-sm">${dl}</span>
+      <span class="mono hide-sm lives" title="lives">${s.lives ? "♥".repeat(Math.min(s.lives, 9)) : "—"}</span></a>`;
+  };
+  return `
+    <section class="panel full hero">
+      <div class="label">NEAR memecoins with a community takeover built in</div>
+      <h1>The memecoin its dev <em>can't kill.</em></h1>
+      <p>Every Revive coin has a heartbeat. If the keeper stops pulsing, holders who were there before the death can vote a Sputnik DAO in,
+        burn the dev's locked tokens and bring the coin back to life. Tokens bought after the death get no vote.</p>
+      <div class="stats">
+        <div class="stat"><div class="label">Coins</div><div class="v">${live.length}</div></div>
+        <div class="stat"><div class="label">Flatlined now</div><div class="v" style="color:var(--dead)">${dead}</div></div>
+        <div class="stat"><div class="label">Open takeovers</div><div class="v" style="color:var(--vote)">${votes}</div></div>
+        <div class="stat"><div class="label">Lives restored</div><div class="v lives">${lives}</div></div>
+      </div>
+    </section>
+    <section class="panel full">
+      <div class="label">Flatline Watch — open takeovers first, then the dead, then whoever is closest to death</div>
+      <div class="coins">${rows.length ? rows.map(row).join("") : `<div class="empty">No coins yet. <a href="#/launch">Launch the first one.</a></div>`}</div>
+    </section>`;
+}
+
+// ------------------------------------------------------------------ Launch
+function launchView() {
+  setAccent("alive");
+  return `
+    <section class="panel full">
+      <div class="label">Launch a Revive coin</div>
+      <p class="hint">The factory deploys the same audited code to <b>&lt;name&gt;.${esc(FACTORY_ID || "revive.testnet")}</b>. You become the creator and first keeper.
+        Your tokens (up to 10%) stay locked and vest only while you keep pulsing. Attach 1.5 NEAR for storage; anything more seeds the treasury.</p>
+      <form id="launch" class="stack">
+        <div class="grid2">
+          <label class="f"><span>Account name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" placeholder="ninelives"></label>
+          <label class="f"><span>Coin name</span><input name="cname" required placeholder="Nine Lives"></label>
+          <label class="f"><span>Symbol</span><input name="symbol" required maxlength="16" placeholder="NINE"></label>
+          <label class="f"><span>Total supply (tokens)</span><input name="supply" type="number" min="1" max="1000000000" value="1000000000"></label>
+          <label class="f"><span>Your locked share (% , max 10)</span><input name="dev" type="number" min="0" max="10" step="0.5" value="10"></label>
+          <label class="f"><span>Vesting (days)</span><input name="vest" type="number" min="0" value="180"></label>
+          <label class="f"><span>Pulse every (hours)</span><input name="pulse" type="number" min="0.02" step="0.01" value="72"></label>
+          <label class="f"><span>Takeover vote length (hours)</span><input name="vote" type="number" min="0.02" step="0.01" value="24"></label>
+          <label class="f"><span>Quorum (% of eligible weight)</span><input name="quorum" type="number" min="1" max="100" value="20"></label>
+          <label class="f"><span>Comeback penalty (NEAR)</span><input name="penalty" type="number" min="0" step="0.1" value="2"></label>
+          <label class="f"><span>Treasury spend cap per week (NEAR)</span><input name="cap" type="number" min="0" step="0.1" value="1"></label>
+          <label class="f"><span>Seed the treasury with (NEAR)</span><input name="seed" type="number" min="0" step="0.1" value="1"></label>
+        </div>
+        <label class="f"><span>Links (website, X, Telegram)</span><input name="links" placeholder="https://x.com/ninelives"></label>
+        <div class="actions"><button class="primary" type="submit">Launch coin</button>
+          <span class="hint" id="cost"></span></div>
+      </form>
+    </section>`;
+}
+function readLaunch(form) {
+  const f = Object.fromEntries(new FormData(form));
+  const supply = BigInt(Math.floor(Number(f.supply)));
+  const near = (x) => (BigInt(Math.round(Number(x) * 1e6)) * YOCTO_NEAR / 1_000_000n).toString();
+  const config = {
+    name: f.cname.trim(), symbol: f.symbol.trim().toUpperCase(), icon: null, links: f.links.trim() || null,
+    total_supply: (supply * YOCTO_TOKEN).toString(),
+    dev_allocation: (supply * YOCTO_TOKEN * BigInt(Math.round(Number(f.dev) * 100)) / 10000n).toString(),
+    distributor: `${f.name}.${FACTORY_ID || "revive.testnet"}`,
+    pulse_interval_secs: Math.max(60, Math.round(Number(f.pulse) * 3600)),
+    vote_duration_secs: Math.max(60, Math.round(Number(f.vote) * 3600)),
+    quorum_bps: Math.round(Number(f.quorum) * 100),
+    vest_duration_secs: Math.round(Number(f.vest) * DAY),
+    spend_cap: near(f.cap), spend_period_secs: 7 * DAY,
+    comeback_penalty: near(f.penalty),
+    dao_suffix: NETWORK === "mainnet" ? ".sputnik-dao.near" : ".sputnikv2.testnet",
+  };
+  const deposit = (BigInt(near(f.seed)) + 15n * YOCTO_NEAR / 10n).toString();
+  return { name: f.name.trim(), config, deposit };
+}
+
+// ------------------------------------------------------------------- How
+function howView() {
+  setAccent("alive");
+  return `
+    <section class="panel full">
+      <div class="label">How Revive works</div>
+      <div class="steps-how">
+        <div><b>Pulse.</b> The keeper (first the creator) must send an on-chain pulse before every deadline. On time, it's free.</div>
+        <div><b>Flatline.</b> Miss the deadline and the coin flatlines. The keeper can no longer spend the treasury, claim tokens or change links.</div>
+        <div><b>Takeover.</b> Any holder who held before the flatline nominates a Sputnik DAO as the new keeper, and a vote opens.</div>
+        <div><b>Only the loyal vote.</b> Weight is how many tokens you held times how long, counted up to the moment of death. Tokens bought after the death count for nothing, and moving them to another wallet doesn't help.</div>
+        <div><b>Comeback.</b> The old keeper can still come back while the vote is open, but pays a penalty into the treasury, and the vote is cancelled.</div>
+        <div><b>Revival.</b> If yes wins and reaches quorum, the DAO becomes keeper, the creator's locked tokens burn, and the coin gains a life. The DAO must keep pulsing too, or the cycle repeats.</div>
+        <div><b>Lore.</b> Every birth, death, takeover and revival is written on-chain, so a coin's history is part of its meme.</div>
+      </div>
+      <p class="hint" style="margin-top:18px">Code, tests and limits: <a href="${REPO}" target="_blank" rel="noopener">${REPO}</a></p>
+    </section>`;
+}
+
+// ------------------------------------------------------------------ Coin
+async function coinView(r) {
+  const src = REG.coin(r.id);
+  if (!src) throw new Error("unknown coin " + r.id);
+  const S = await src.status();
+  window.__S = S;
+  setAccent(S.status);
+  const dead = S.now > S.flatline_at;
+  const tabs = ["monitor", "verify", "lore"].map((t) =>
+    `<a href="#/coin/${encodeURIComponent(r.id)}/${t}" class="${r.tab === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</a>`).join("");
+  const head = `
+    <section class="panel full monitor">
+      <div class="flash" id="flash"></div>
+      <div class="monitor-top">
+        <div><div class="label">Patient · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a></div>
+          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small></div></div>
+        <div style="text-align:right"><div class="label">Status</div>
+          <div class="status ${S.status === "flatlined" ? "blink" : ""}">${LABEL[S.status]}</div></div>
+      </div>
+      ${r.tab === "monitor" ? `<canvas id="ecg"></canvas>` : ""}
+      <div class="readouts" ${r.tab === "monitor" ? "" : 'style="margin-top:14px"'}>
+        <div class="readout"><div class="label">${dead ? "Flatlined for" : "Next pulse due in"}</div><div class="v" id="deadline">${fmtDur(dead ? S.now - S.flatline_at : S.flatline_at - S.now)}</div></div>
+        <div class="readout"><div class="label">Lives</div><div class="v lives">${S.lives ? "♥".repeat(Math.min(S.lives, 9)) + (S.lives > 9 ? ` ×${S.lives}` : "") : "0"}</div></div>
+        <div class="readout"><div class="label">Treasury</div><div class="v">${fmtNear(S.treasury)}</div></div>
+        <div class="readout"><div class="label">Supply</div><div class="v">${fmtTokens(S.total_supply)}</div></div>
+      </div>
+      <div class="tabs">${tabs}</div>
+    </section>`;
+  if (r.tab === "verify") return head + await verifyPanel(src, S);
+  if (r.tab === "lore") return head + await lorePanel(src, true);
+  return head + await takeoverPanel(src, S) + keeperPanel(src, S) + await lorePanel(src, false) + directorPanel(r.id);
+}
+
+async function takeoverPanel(src, S) {
+  const me = src.me(), tk = S.takeover;
+  const weight = me ? BigInt(await src.weight(me)) : 0n;
+  let body;
+  if (!tk && S.status !== "flatlined") {
+    body = `<p class="hint">No takeover. The keeper still has a pulse, so holders can't take over.</p>
+      <div class="row"><span>Your vote weight if it flatlines</span><b>${me ? fmtWeight(weight) : "connect a wallet"}</b></div>`;
+  } else if (!tk) {
+    body = `<p class="hint">The keeper missed the deadline. Any holder from before the flatline can nominate a Sputnik DAO as the new keeper.</p>
+      <div class="row"><span>Your vote weight</span><b>${me ? fmtWeight(weight) : "connect a wallet"}</b></div>
+      <div class="stack"><input id="steward" placeholder="yourcoin${esc(S.config.dao_suffix)}" value="${DEMO ? esc(S.config.symbol.toLowerCase()) + "-holders" + esc(S.config.dao_suffix) : ""}">
+      <button class="primary" id="b-start">Start takeover</button></div>`;
+  } else {
+    const yes = BigInt(tk.yes), no = BigInt(tk.no), total = BigInt(tk.total_eligible) || 1n;
+    const pct = (x) => Number(x * 10000n / total) / 100;
+    const ballot = me ? await src.ballot(me) : null;
+    const closed = S.now >= tk.ends_at;
+    body = `
+      <div class="row"><span>Nominee</span><b style="color:var(--dao)">${esc(tk.steward)}</b></div>
+      <div class="row"><span>${closed ? "Vote closed" : "Vote ends in"}</span><b>${closed ? "finalize it" : fmtDur(tk.ends_at - S.now)}</b></div>
+      <div class="label" style="margin-top:12px">Yes ${pct(yes)}% · No ${pct(no)}% · quorum ${S.config.quorum_bps / 100}%</div>
+      <div class="bar"><i style="width:${pct(yes)}%;background:var(--alive)"></i><i style="left:${pct(yes)}%;width:${pct(no)}%;background:var(--dead)"></i>
+        <span class="q" style="left:${S.config.quorum_bps / 100}%"></span></div>
+      <div class="row"><span>Voters</span><b>${tk.voters}</b></div>
+      <div class="row"><span>Your weight</span><b>${me ? fmtWeight(weight) : "connect a wallet"}</b></div>
+      <div class="actions">${closed ? `<button class="primary" id="b-final">Finalize</button>` :
+        ballot ? `<span class="hint">You voted ${ballot.support ? "YES" : "NO"}.</span>` :
+        !me ? `<span class="hint">Connect a wallet to vote.</span>` :
+        weight === 0n ? `<span class="hint" style="color:var(--dead)">No vote: you held nothing before the flatline. Tokens bought after the death don't count.</span>` :
+        `<button class="primary" id="b-yes">Vote yes, revive</button><button id="b-no">Vote no</button>`}</div>`;
+  }
+  return `<section class="panel"><div class="label">Takeover</div>${body}</section>`;
+}
+
+function keeperPanel(src, S) {
+  const me = src.me(), isKeeper = me === S.keeper, dead = S.now > S.flatline_at;
+  return `<section class="panel"><div class="label">Keeper</div>
+    <div class="row"><span>Keeper</span><b style="color:${isDao(S.keeper, S) ? "var(--dao)" : "inherit"}">${esc(S.keeper)}</b></div>
+    <div class="row"><span>Creator</span><b>${esc(S.creator)}</b></div>
     <div class="row"><span>Creator tokens locked</span><b>${fmtTokens(S.dev_locked)}</b></div>
     <div class="row"><span>Creator tokens burned</span><b style="color:${BigInt(S.dev_burned) > 0n ? "var(--dead)" : "inherit"}">${fmtTokens(S.dev_burned)}</b></div>
     <div class="row"><span>Comeback penalty</span><b>${fmtNear(S.config.comeback_penalty)}</b></div>
-    <div class="actions">${isKeeper ? `<button class="primary" id="b-pulse">${dead ? "Come back (pay penalty)" : "Pulse ♥"}</button>` : `<span class="hint">Only the keeper can pulse.</span>`}</div>`;
-  if (isKeeper) $("b-pulse").onclick = () => act("pulse", {}, dead ? S.config.comeback_penalty : "0", dead ? "Back from the dead. Penalty paid to the treasury." : "Pulse sent. Still alive.");
+    <div class="actions">${isKeeper ? `<button class="primary" id="b-pulse" data-late="${dead ? 1 : ""}">${dead ? "Come back (pay penalty)" : "Pulse ♥"}</button>` : `<span class="hint">Only the keeper can pulse.</span>`}</div>
+  </section>`;
+}
 
-  await renderTakeover(me);
-  const lore = await src.lore();
-  $("lore").innerHTML = lore.slice().reverse().map((l) =>
+async function lorePanel(src, full) {
+  const lore = (await src.lore()).slice().reverse();
+  const items = (full ? lore : lore.slice(0, 6)).map((l) =>
     `<li style="--c:var(${LORE_C[l.kind] || "--dim"})"><span class="t">${new Date(l.at * 1000).toISOString().slice(0, 16).replace("T", " ")}</span>
-      <div class="k">${l.kind.replace("_", " ")}</div>${l.note}</li>`).join("");
+      <div class="k">${esc(l.kind.replace("_", " "))}</div>${esc(l.note)}</li>`).join("");
+  return `<section class="panel ${full ? "full" : ""}"><div class="label">Lore — every death and revival, on-chain</div><ul class="lore">${items}</ul></section>`;
 }
 
-async function renderTakeover(me) {
-  const tk = S.takeover, box = $("takeover");
-  const weight = me ? BigInt(await src.weight(me)) : 0n;
-  if (!tk) {
-    if (S.status !== "flatlined") {
-      box.innerHTML = `<p class="hint">No takeover. The keeper still has a pulse, so holders can't take over.</p>
-        <div class="row"><span>Your vote weight if it flatlines</span><b>${fmtWeight(weight)}</b></div>`;
-      return;
-    }
-    box.innerHTML = `<p class="hint">The keeper missed the deadline. Any holder from before the flatline can nominate a Sputnik DAO as the new keeper.</p>
-      <div class="row"><span>Your vote weight</span><b>${fmtWeight(weight)}</b></div>
-      <div class="stack"><input id="steward" placeholder="yourcoin${S.config.dao_suffix}" value="${DEMO ? "ninelives" + S.config.dao_suffix : ""}">
-      <button class="primary" id="b-start">Start takeover</button></div>`;
-    $("b-start").onclick = () => act("start_takeover", { steward: $("steward").value.trim() }, "0", "Takeover opened. Holders, vote.");
-    return;
+async function verifyPanel(src, S) {
+  const v = await src.verify();
+  const matches = v.factory_code_hash && v.code_hash === v.factory_code_hash;
+  const supplyOk = BigInt(v.supply) === BigInt(S.circulating ?? 0) + BigInt(S.dev_locked);
+  const solvent = BigInt(v.balance) >= BigInt(S.treasury);
+  const keeperDao = isDao(S.keeper, S);
+  const item = (ok, title, detail) => `<div class="check"><span class="i" style="color:var(${ok === null ? "--vote" : ok ? "--alive" : "--dead"})">${ok === null ? "!" : ok ? "✓" : "✗"}</span>
+    <div><b>${title}</b><div class="d">${detail}</div></div></div>`;
+  return `<section class="panel full"><div class="label">Verify — read live from ${DEMO ? "the simulator" : "NEAR RPC"}, no trust needed</div>
+    ${item(v.keys === 0, v.keys === 0 ? "The coin has no access keys" : `The coin has ${v.keys} access key(s)`,
+      "Nobody can sign transactions as this coin or replace its code. Only its rules can move its tokens and treasury.")}
+    ${item(matches, matches ? "Same code as every Revive coin" : "Code hash does not match the factory",
+      `Coin code hash <b>${esc(v.code_hash)}</b><br>Factory code hash <b>${esc(v.factory_code_hash || "—")}</b><br>SHA-256 hex ${esc(b58ToHex(v.code_hash))} — compare with the hash printed by <a href="${REPO}/actions" target="_blank" rel="noopener">CI</a>.`)}
+    ${item(v.factory_keys === 0 ? true : v.factory_keys === null ? null : false, v.factory_keys === 0 ? "The factory is locked" : "The factory still has keys",
+      `${esc(v.factory)} ${v.factory_keys === 0 ? "has no keys, so nobody can change how coins are made." : `has ${v.factory_keys ?? "?"} key(s).`}`)}
+    ${item(solvent, solvent ? "The treasury is fully backed" : "Treasury exceeds the coin's balance",
+      `Account balance ${fmtNear(v.balance)} ≥ treasury ${fmtNear(S.treasury)}.`)}
+    ${item(supplyOk, supplyOk ? "Supply adds up" : "Supply does not add up",
+      `Total ${fmtTokens(v.supply)} = held by holders ${fmtTokens(S.circulating ?? 0)} + creator locked ${fmtTokens(S.dev_locked)} (burned so far: ${fmtTokens(S.dev_burned)}).`)}
+    ${item(keeperDao ? true : null, keeperDao ? "The keeper is a Sputnik DAO" : "The keeper is the creator",
+      keeperDao ? `${esc(S.keeper)} — holders revived this coin ${S.lives} time(s).` : `If ${esc(S.keeper)} stops pulsing, holders can vote a DAO in.`)}
+  </section>`;
+}
+
+function directorPanel(id) {
+  if (!DEMO) return "";
+  return `<section class="panel full director">
+    <div class="label">Demo mode — simulated contract, same rules${id === MOCKS[0].id ? "" : ". The scripted story runs on $NINE"}</div>
+    <p class="hint">You are acting as <select id="actor" style="width:auto;display:inline-block">${["alice.testnet", "bob.testnet", "carol.testnet", "whale.testnet", "dev.testnet", REG.coin(id).keeper]
+      .filter((v, i, a) => a.indexOf(v) === i).map((a) => `<option ${a === ACTOR.value ? "selected" : ""}>${a}</option>`).join("")}</select>. Run the story in order, or play any actor yourself.</p>
+    ${id === MOCKS[0].id ? `<div class="steps">${STORY.map(([l], i) => `<button data-i="${i}">${l}</button>`).join("")}</div>` : ""}
+  </section>`;
+}
+const NINE = () => MOCKS[0];
+const as = (a) => { ACTOR.value = a; };
+const STORY = [
+  ["1 · Dev pulses", () => { as("dev.testnet"); CLOCK.t += DAY; NINE().pulse("dev.testnet"); return "Dev pulsed. The coin is alive."; }],
+  ["2 · Dev goes silent (+3 days)", () => { CLOCK.t += 3 * DAY + 60; return "No pulse. FLATLINE."; }],
+  ["3 · Whale buys 250M after death", () => { NINE().buy("whale.testnet", 250_000_000); return "Whale bought 250M — after the flatline."; }],
+  ["4 · Alice opens takeover", () => { as("alice.testnet"); NINE().startTakeover("alice.testnet", "ninelives.sputnikv2.testnet"); return "Takeover opened: ninelives DAO nominated."; }],
+  ["5 · Alice votes yes", () => { as("alice.testnet"); NINE().vote("alice.testnet", true); return "Alice: YES."; }],
+  ["6 · Whale tries to vote no", () => { as("whale.testnet"); NINE().vote("whale.testnet", false); }],
+  ["7 · Bob votes yes", () => { as("bob.testnet"); NINE().vote("bob.testnet", true); return "Bob: YES."; }],
+  ["8 · Carol votes no", () => { as("carol.testnet"); NINE().vote("carol.testnet", false); return "Carol: NO."; }],
+  ["9 · Vote ends (+1 day)", () => { CLOCK.t += DAY; return "Vote closed."; }],
+  ["10 · Finalize → REVIVE", () => { as("bob.testnet"); const ok = NINE().finalize(); if (ok) revivedFx(); return ok ? "REVIVED. Life #" + NINE().lives + ". Dev tokens burned." : "Takeover failed."; }],
+  ["11 · DAO pulses as keeper", () => { as("ninelives.sputnikv2.testnet"); CLOCK.t += DAY; NINE().pulse("ninelives.sputnikv2.testnet"); return "The DAO keeps the heart beating."; }],
+  ["Alt · Dev comes back mid-vote", () => { as("dev.testnet"); NINE().pulse("dev.testnet", 2n * YOCTO_NEAR); return "Comeback: 2 Ⓝ penalty to the treasury, vote cancelled."; }],
+  ["↺ Reset", () => { NINE().reset(); as("alice.testnet"); return "Reset."; }],
+];
+
+// ================================================================ actions
+function bind(r) {
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  if (r.page === "coin") {
+    const src = REG.coin(r.id), S = window.__S;
+    const act = async (method, args, deposit, ok) => {
+      try { await src.call(method, args, deposit); toast(ok); }
+      catch (e) { toast(String(e.message || e).replace(/^.*Smart contract panicked: /, ""), true); }
+      await render();
+    };
+    on("b-pulse", () => { const late = $("b-pulse").dataset.late; act("pulse", {}, late ? S.config.comeback_penalty : "0", late ? "Back from the dead. Penalty paid to the treasury." : "Pulse sent. Still alive."); });
+    on("b-start", () => act("start_takeover", { steward: $("steward").value.trim() }, "0", "Takeover opened. Holders, vote."));
+    on("b-yes", () => act("vote", { support: true }, "0", "Voted YES."));
+    on("b-no", () => act("vote", { support: false }, "0", "Voted NO."));
+    on("b-final", () => act("finalize_takeover", {}, "0", "Vote finalized."));
+    const actor = $("actor"); if (actor) actor.onchange = () => { ACTOR.value = actor.value; render(); };
+    const steps = document.querySelector(".steps");
+    if (steps) steps.onclick = async (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      try { const msg = STORY[b.dataset.i][1](); if (msg) toast(msg); } catch (err) { toast("Rejected: " + err.message, true); }
+      await render();
+    };
+    if ($("ecg")) startEcg();
   }
-  const yes = BigInt(tk.yes), no = BigInt(tk.no), total = BigInt(tk.total_eligible) || 1n;
-  const pct = (x) => Number(x * 10000n / total) / 100;
-  const ballot = me ? await src.ballot(me) : null;
-  const closed = S.now >= tk.ends_at;
-  box.innerHTML = `
-    <div class="row"><span>Nominee</span><b style="color:var(--dao)">${tk.steward}</b></div>
-    <div class="row"><span>${closed ? "Vote closed" : "Vote ends in"}</span><b>${closed ? "finalize it" : fmtDur(tk.ends_at - S.now)}</b></div>
-    <div class="label" style="margin-top:12px">Yes ${pct(yes)}% · No ${pct(no)}% · quorum ${S.config.quorum_bps / 100}%</div>
-    <div class="bar"><i style="width:${pct(yes)}%;background:var(--alive)"></i><i style="left:${pct(yes)}%;width:${pct(no)}%;background:var(--dead)"></i>
-      <span class="q" style="left:${S.config.quorum_bps / 100}%"></span></div>
-    <div class="row"><span>Voters</span><b>${tk.voters}</b></div>
-    <div class="row"><span>Your weight</span><b>${fmtWeight(weight)}</b></div>
-    <div class="actions">${closed ? `<button class="primary" id="b-final">Finalize</button>` :
-      ballot ? `<span class="hint">You voted ${ballot.support ? "YES" : "NO"}.</span>` :
-      weight === 0n ? `<span class="hint" style="color:var(--dead)">No vote: you held nothing before the flatline. Tokens bought after the death don't count.</span>` :
-      `<button class="primary" id="b-yes">Vote yes, revive</button><button id="b-no">Vote no</button>`}</div>`;
-  if (closed) $("b-final").onclick = () => act("finalize_takeover", {}, "0", "Vote finalized.");
-  else if (!ballot && weight > 0n) {
-    $("b-yes").onclick = () => act("vote", { support: true }, "0", "Voted YES.");
-    $("b-no").onclick = () => act("vote", { support: false }, "0", "Voted NO.");
+  if (r.page === "launch") {
+    const form = $("launch");
+    const cost = () => { try { const { deposit } = readLaunch(form); $("cost").textContent = `You'll attach ${fmtNear(deposit)} (1.50 storage + treasury seed).`; } catch {} };
+    form.oninput = cost; cost();
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const { name, config, deposit } = readLaunch(form);
+      try {
+        const id = await REG.launch(name, config, deposit);
+        toast(`${config.symbol} launched.`);
+        location.hash = `#/coin/${encodeURIComponent(typeof id === "string" ? id : `${name}.${FACTORY_ID}`)}`;
+      } catch (err) { toast(String(err.message || err), true); }
+    };
   }
 }
 
-async function act(method, args, deposit, ok) {
-  try { await src.call(method, args, deposit); toast(ok); }
-  catch (e) { toast(e.message.replace(/^.*Smart contract panicked: /, ""), true); }
-  await refresh();
-}
+function revivedFx() { const f = $("flash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); } ecg.kick = 1; }
 
-function revivedFx() { const f = $("flash"); f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); ecg.kick = 1; }
-
-// ----------------------------------------------------------------- ECG
-const ecg = { x: 0, kick: 0, last: [] };
+// ==================================================================== ECG
+const ecg = { x: 0, kick: 0, last: [], running: false };
+function startEcg() { if (!ecg.running) { ecg.running = true; requestAnimationFrame(drawEcg); } }
 function drawEcg() {
-  const c = $("ecg"), dpr = devicePixelRatio || 1;
+  const c = $("ecg");
+  if (!c) { ecg.running = false; return; }
+  const dpr = devicePixelRatio || 1;
   if (c.width !== c.clientWidth * dpr) { c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr; ecg.last = []; ecg.x = 0; }
   const g = c.getContext("2d"), W = c.width, H = c.height, mid = H * 0.6;
-  const status = S ? S.status : "alive";
+  const status = window.__S ? window.__S.status : "alive";
   const color = getComputedStyle(document.documentElement).getPropertyValue(COLORS[status] || "--alive").trim();
-  const speed = 2.2 * dpr;
   for (let i = 0; i < 2; i++) {
-    ecg.x = (ecg.x + speed) % W;
-    const phase = (performance.now() / 900) % 1;
+    ecg.x = (ecg.x + 2.2 * dpr) % W;
+    const p = (performance.now() / 900) % 1;
     let y = mid + (Math.random() - 0.5) * 1.5 * dpr;
     if (ecg.kick > 0) { y = mid - Math.sin(ecg.kick * Math.PI) * H * 0.55; ecg.kick = Math.max(0, ecg.kick - 0.02); }
     else if (status === "alive") {
-      const p = phase;
       if (p > .10 && p < .14) y -= H * .06 * Math.sin((p - .10) / .04 * Math.PI);
       if (p > .20 && p < .22) y += H * .08;
       if (p > .22 && p < .25) y -= H * .45 * Math.sin((p - .22) / .03 * Math.PI);
       if (p > .25 && p < .27) y += H * .12;
       if (p > .40 && p < .48) y -= H * .09 * Math.sin((p - .40) / .08 * Math.PI);
     } else if (status === "voting") {
-      if (phase > .5 && phase < .53) y -= H * .05 * Math.sin((phase - .5) / .03 * Math.PI);
+      if (p > .5 && p < .53) y -= H * .05 * Math.sin((p - .5) / .03 * Math.PI);
     }
     ecg.last[Math.floor(ecg.x / dpr)] = y;
   }
@@ -442,7 +737,7 @@ function drawEcg() {
   g.beginPath();
   const head = Math.floor(ecg.x / dpr), cols = Math.floor(W / dpr);
   for (let i = 0; i < cols; i++) {
-    if (Math.abs(i - head) < 14 && i > head) continue;       // gap ahead of the sweep
+    if (i > head && i - head < 14) continue;
     const y = ecg.last[i] ?? mid;
     if (i === 0 || i === head + 14) g.moveTo(i * dpr, y); else g.lineTo(i * dpr, y);
   }
@@ -451,49 +746,18 @@ function drawEcg() {
   requestAnimationFrame(drawEcg);
 }
 
-// --------------------------------------------------------------- director
-function setupDirector() {
-  $("director").hidden = false;
-  const actors = ["alice.testnet", "bob.testnet", "carol.testnet", "whale.testnet", "dev.testnet", "ninelives.sputnikv2.testnet"];
-  $("actor").innerHTML = actors.map((a) => `<option>${a}</option>`).join("");
-  const as = (a) => { $("actor").value = a; };
-  const m = src;
-  const steps = [
-    ["1 · Dev pulses", () => { as("dev.testnet"); m.advance(DAY); m.pulse("dev.testnet"); return "Dev pulsed. The coin is alive."; }],
-    ["2 · Dev goes silent (+3 days)", () => { m.advance(3 * DAY + 60); return "No pulse. FLATLINE."; }],
-    ["3 · Whale buys 250M after death", () => { m.buy("whale.testnet", 250_000_000); return "Whale bought 250M — after the flatline."; }],
-    ["4 · Alice opens takeover", () => { as("alice.testnet"); m.startTakeover("alice.testnet", "ninelives.sputnikv2.testnet"); return "Takeover opened: ninelives DAO nominated."; }],
-    ["5 · Alice votes yes", () => { as("alice.testnet"); m.vote("alice.testnet", true); return "Alice: YES."; }],
-    ["6 · Whale tries to vote no", () => { as("whale.testnet"); m.vote("whale.testnet", false); }],
-    ["7 · Bob votes yes", () => { as("bob.testnet"); m.vote("bob.testnet", true); return "Bob: YES."; }],
-    ["8 · Carol votes no", () => { as("carol.testnet"); m.vote("carol.testnet", false); return "Carol: NO."; }],
-    ["9 · Vote ends (+1 day)", () => { m.advance(DAY); return "Vote closed."; }],
-    ["10 · Finalize → REVIVE", () => { as("bob.testnet"); const ok = m.finalize(); if (ok) revivedFx(); return ok ? "REVIVED. Life #" + m.lives + ". Dev tokens burned." : "Takeover failed."; }],
-    ["11 · DAO pulses as keeper", () => { as("ninelives.sputnikv2.testnet"); m.advance(DAY); m.pulse("ninelives.sputnikv2.testnet"); return "The DAO keeps the heart beating."; }],
-    ["Alt · Dev comes back mid-vote", () => { as("dev.testnet"); m.pulse("dev.testnet", 2n * YOCTO_NEAR); return "Comeback: 2 Ⓝ penalty to the treasury, vote cancelled."; }],
-    ["↺ Reset", () => { m.reset(); as("alice.testnet"); return "Reset."; }],
-  ];
-  $("steps").innerHTML = steps.map(([l], i) => `<button data-i="${i}">${l}</button>`).join("");
-  $("steps").onclick = async (e) => {
-    const b = e.target.closest("button"); if (!b) return;
-    try { const msg = steps[b.dataset.i][1](); if (msg) toast(msg); } catch (err) { toast("Rejected: " + err.message, true); }
-    await refresh();
-  };
-  $("actor").onchange = refresh;
-}
-
-// ------------------------------------------------------------------- boot
-if (DEMO) setupDirector();
-else {
-  setupWallet().then(refresh);
+// =================================================================== boot
+window.addEventListener("hashchange", render);
+if (!DEMO) {
+  setupWallet().then(render).catch(() => {});
   $("connect").onclick = async () => {
-    if (account) { const w = await connector.wallet(); await w.signOut(); account = null; refresh(); }
+    if (!connector) return;
+    if (account) { const w = await connector.wallet(); await w.signOut(); account = null; render(); }
     else connector.connect();
   };
+  setInterval(() => { if (!document.activeElement || !["INPUT", "SELECT"].includes(document.activeElement.tagName)) render(); }, 8000);
 }
-requestAnimationFrame(drawEcg);
-refresh();
-setInterval(() => { if (!DEMO) refresh(); else if (S) { $("deadline").textContent = fmtDur(Math.abs(S.flatline_at - S.now)); } }, DEMO ? 1000 : 6000);
+render();
 </script>
 </body>
 </html>
