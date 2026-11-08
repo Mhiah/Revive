@@ -197,6 +197,17 @@ export async function run(opts) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // Describe the pasted key's shape without revealing it, to debug paste problems.
+  const raw = String(process.env.NEAR_PRIVATE_KEY || "");
+  const B58 = /[1-9A-HJ-NP-Za-km-z]/;
+  const body = raw.includes(":") ? raw.slice(raw.lastIndexOf(":") + 1) : raw;
+  console.log("key shape:", JSON.stringify({
+    total_chars: raw.length,
+    prefix: raw.includes(":") ? raw.slice(0, raw.indexOf(":")).replace(/[^a-z0-9_-]/gi, "?") : "(none)",
+    body_chars: body.trim().length,
+    non_base58_in_body: [...body.trim()].filter((c) => !B58.test(c)).map((c) => (c === " " ? "space" : c === "\n" ? "newline" : /[a-z0-9]/i.test(c) ? "char:" + c : "symbol:" + c.charCodeAt(0))),
+    lines: raw.split("\n").length,
+  }));
   // Accept the key however it was pasted (quotes, spaces, a JSON blob): take the ed25519:... part.
   const NEAR_PRIVATE_KEY = (String(process.env.NEAR_PRIVATE_KEY || "").match(/ed25519:[1-9A-HJ-NP-Za-km-z]+/) || [])[0];
   const NEAR_ACCOUNT_ID = String(process.env.NEAR_ACCOUNT_ID || "").replace(/["'\s]/g, "");
