@@ -197,7 +197,9 @@ export async function run(opts) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { NEAR_ACCOUNT_ID, NEAR_PRIVATE_KEY } = process.env;
+  // Accept the key however it was pasted (quotes, spaces, a JSON blob): take the ed25519:... part.
+  const NEAR_PRIVATE_KEY = (String(process.env.NEAR_PRIVATE_KEY || "").match(/ed25519:[1-9A-HJ-NP-Za-km-z]+/) || [])[0];
+  const NEAR_ACCOUNT_ID = String(process.env.NEAR_ACCOUNT_ID || "").replace(/["'\s]/g, "");
   if (!NEAR_ACCOUNT_ID || !NEAR_PRIVATE_KEY) {
     console.error("Set NEAR_ACCOUNT_ID and NEAR_PRIVATE_KEY (a funded testnet account, about 10 NEAR).");
     process.exit(1);

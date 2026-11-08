@@ -119,7 +119,7 @@ node scripts/sandbox-e2e.mjs      # needs the two wasm files from CI or cargo ne
 
 **The same stories on testnet:** run the **testnet-demo** workflow (Actions tab)
 after adding `NEAR_ACCOUNT_ID` and `NEAR_PRIVATE_KEY` secrets for a funded
-testnet account (about 13 NEAR). It uploads `demo-coins.json` with the factory
+testnet account (about 11 NEAR). It uploads `demo-coins.json` with the factory
 and coin names. Pass an existing Sputnik DAO as `steward` to nominate a real DAO.
 
 **The app:** open `web/index.html` (demo mode), or `?factory=revive-xxxxx.you.testnet`
