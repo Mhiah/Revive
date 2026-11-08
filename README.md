@@ -25,6 +25,20 @@ so both coins have since flatlined again: anyone holding from before can open a 
 **No wallet?** [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) runs a simulator with the same rules.
 Open **Nine Lives** and click the story buttons in order.
 
+## Judge quickstart
+
+| Do this | You should see |
+| --- | --- |
+| Open [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) | **Flatline Watch** listing `$NINE` and `$BACK`, read live from NEAR testnet |
+| Click **Nine Lives** → **Verify** | Six checks from RPC: no access keys on the coin, its code hash equals the factory's, the factory has no keys, treasury backed, supply adds up (100M burned), and who the keeper is |
+| Click **Lore** | The coin's on-chain history: born, flatline, takeover, revived |
+| Open [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) → **Nine Lives**, click steps 1–11 | The full story with no wallet: a whale's post-death vote is refused, the coin revives, the DAO pulses |
+| Open **Simulation** | Six 60-day scenarios run on the real contract: alive / flatlined / voting per day, supply and treasury charts |
+| `cd contract && cargo test` | `21 passed` (plus `cd factory && cargo test`: `7 passed`) |
+| `cd contract && cargo run --example simulate` | The six scenarios' day-60 results printed; `web/simulation.json` rewritten |
+| Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | Both stories on a local NEAR node, every step checked (`All checks passed`) |
+| [testnet-demo run](https://github.com/Mhiah/Revive/actions/workflows/testnet-demo.yml) | The same stories on NEAR testnet, against the coins above |
+
 ## Why
 
 When a memecoin's dev walks away, holders often run a *community takeover*
@@ -74,6 +88,31 @@ The quorum compares Yes weight with **all** eligible weight. The contract keeps
 a running `Σ balance × since`, so the total is one multiplication, whether the
 coin has 10 holders or 10 million.
 
+## 60-day simulation
+
+The track's example prompt asks to "simulate 60 days of community behavior first and show supply
+over time under a few scenarios." [`contract/examples/simulate.rs`](contract/examples/simulate.rs) does that
+with the **real contract**, not a model: every pulse, buy, vote and takeover is a call into `Revive`
+under a mocked NEAR runtime with a moving clock. 12 holders, daily buys and tips, a keeper who pulses
+every other day until they don't. Parameters: 1B supply, 10% creator allocation vesting over 90 days,
+3-day pulse, 1-day vote, 20% quorum, 2 NEAR comeback penalty.
+
+![Six scenarios over 60 days: alive, flatlined and voting days](docs/simulation.png)
+
+| Scenario | Day 60 | Lives | Supply | Creator tokens burned | Treasury |
+| --- | --- | --- | --- | --- | --- |
+| Dev stays | alive | 0 | 1,000M | 0 | 12.0 NEAR |
+| Dev quits on day 12, holders revive | alive | 1 | 907.2M | 92.8M | 12.5 NEAR |
+| Whale buys 300M after the death | alive (whale's vote refused) | 1 | 907.2M | 92.8M | 12.5 NEAR |
+| Dev comes back mid-vote | alive | 0 | 1,000M | 0 | 18.5 NEAR (+2 penalty) |
+| The steward DAO dies too | alive | 2 | 907.2M | 92.8M | 13.0 NEAR |
+| Holders vote no | flatlined | 0 | 1,000M | 0 | 16.5 NEAR |
+
+What it shows: supply only ever falls, and only by the creator's *unvested* tokens on the first revival
+(the 7.2M the dev vested while alive stay theirs). A whale arriving after the death changes nothing. A comeback is
+possible but costs the dev, and the penalty stays with holders. Each extra life costs nothing to supply.
+The interactive version is the **Simulation** page of the app.
+
 ## The app
 
 | Page | What it shows |
@@ -83,6 +122,7 @@ coin has 10 holders or 10 million.
 | **Coin · Monitor** | A live heart monitor (green alive, red flatlined, amber voting), countdown, lives, treasury, the takeover vote and the keeper. |
 | **Coin · Verify** | Six checks read live from NEAR RPC: no access keys on the coin, same code hash as the factory (with the hex to compare against CI), factory locked, treasury backed, supply adds up, keeper is a DAO. |
 | **Coin · Lore** | Every birth, death, takeover, comeback and revival, from the contract. |
+| **Simulation** | The 60-day scenarios below: a heartbeat timeline per scenario, supply and treasury charts with hover, event log, day-60 table. |
 
 Every number is a direct RPC read. There is no indexer or backend.
 
@@ -178,7 +218,10 @@ contract/            the coin (near-sdk 5.30)
   src/token.rs       NEP-141 / 145 / 148 and hold-time accounting
   src/tests.rs       21 unit tests
 factory/             launches coins as <name>.<factory>; 7 unit tests
-web/index.html       the app: Flatline Watch, Launch, coin Monitor / Verify / Lore, demo mode
+contract/examples/   simulate.rs: 60 days x 6 scenarios on the real contract
+web/index.html       the app: Flatline Watch, Launch, Simulation, coin Monitor / Verify / Lore, demo mode
+web/simulation.json  output of the simulation, read by the Simulation page
+docs/                README images
 scripts/             demo-coins.mjs (deploy + both stories), sandbox-e2e.mjs, Sputnik DAO how-to
 .github/workflows/   CI (tests, lints, wasm, sandbox e2e), Pages, testnet-demo
 ```

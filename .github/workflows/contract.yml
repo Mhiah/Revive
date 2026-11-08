@@ -21,6 +21,9 @@ jobs:
             (cd $c && cargo test && cargo clippy --all-targets -- -D warnings)
           done
 
+      - name: 60-day simulation runs on the real contract
+        run: cd contract && cargo run --example simulate /tmp/simulation.json
+
       - name: Cache cargo-near
         id: cache-cargo-near
         uses: actions/cache@v4
