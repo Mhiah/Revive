@@ -454,7 +454,7 @@ async function watchView() {
 }
 
 // ------------------------------------------------------------------ Launch
-let LAUNCH_COST = 23n * YOCTO_NEAR / 10n;          // demo default; live value from the factory
+let LAUNCH_COST = 25n * YOCTO_NEAR / 10n;          // demo default; live value from the factory
 async function launchView() {
   setAccent("alive");
   if (!DEMO && FACTORY_ID) LAUNCH_COST = BigInt(await view(FACTORY_ID, "get_launch_cost"));
