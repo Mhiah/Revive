@@ -967,23 +967,32 @@ function deadZones(events, S, t0, t1, knownFrom) {
   if (!a.length && S.now > S.flatline_at) out.push([Math.max(S.flatline_at, t0), t1]);
   return out.filter(([x, y]) => y > x);
 }
+const RANGE = {};                                   // per coin: "all" or "zoom"
+const NICE = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, DAY, 2 * DAY, 7 * DAY, 14 * DAY, 30 * DAY];
 async function activityPanel(src, S) {
   let A;
   try { A = await src.activity(S); } catch (e) { return `<section class="panel full"><div class="label">Activity</div><p class="hint">Couldn't load history: ${esc(e.message)}</p></section>`; }
-  const sym = esc(S.config.symbol), t1 = S.now;
+  const sym = esc(S.config.symbol), now = S.now;
   const known = A.transfers !== null && !A.partial;
-  let t0 = A.from ?? Math.min(S.launched_at || t1, ...A.events.map((e) => e.t));
+  const tr = A.transfers || [];
+  let t0 = A.from ?? Math.min(S.launched_at || now, ...A.events.map((e) => e.t)), t1 = now;
+  // When everything happened in a short burst (like a scripted demo), offer to zoom to it.
+  const ts = [...A.events.map((e) => e.t), ...tr.map((x) => x.t)].filter((t) => t >= t0);
+  const lo = Math.min(...ts), hi = Math.max(...ts), canZoom = ts.length > 2 && hi - lo < (now - t0) * 0.25;
+  const zoom = canZoom && RANGE[src.id] === "zoom";
+  if (zoom) { const pad = Math.max(60, (hi - lo) * 0.08); t0 = lo - pad; t1 = Math.min(now, hi + pad); }
   if (t1 - t0 < 600) t0 = t1 - 600;
   const narrow = innerWidth < 600;                  // phones get fewer, wider buckets and readable text
-  const span = t1 - t0, N = narrow ? 20 : 40, bw = span / N;
-  const tr = A.transfers || [];
+  const want = narrow ? 20 : 40, bw = NICE.find((x) => x >= (t1 - t0) / want) || Math.ceil((t1 - t0) / want / DAY) * DAY;
+  t0 = Math.floor(t0 / bw) * bw;
+  const N = Math.ceil((t1 - t0) / bw), span = N * bw;
   const buckets = Array.from({ length: N }, (_, i) => ({ a: t0 + i * bw, b: t0 + (i + 1) * bw, n: 0, vol: 0n, ev: {} }));
   const bi = (t) => Math.min(N - 1, Math.max(0, Math.floor((t - t0) / bw)));
-  for (const x of tr) if (x.t >= t0) { const b = buckets[bi(x.t)]; b.n++; b.vol += BigInt(x.amount); }
-  const evs = A.events.filter((e) => e.t >= t0 && EV[e.kind]);
+  for (const x of tr) if (x.t >= t0 && x.t <= t1) { const b = buckets[bi(x.t)]; b.n++; b.vol += BigInt(x.amount); }
+  const evs = A.events.filter((e) => e.t >= t0 && e.t <= t1 && EV[e.kind]);
   for (const e of evs) { const b = buckets[bi(e.t)]; b.ev[e.kind] = (b.ev[e.kind] || 0) + 1; }
   // Without the indexer, on-time pulses are unknown, so only the current death is drawn.
-  const zones = A.source === "lore" ? (S.now > S.flatline_at ? [[Math.max(S.flatline_at, t0), t1]] : []) : deadZones(evs, S, t0, t1, A.from ?? 0);
+  const zones = A.source === "lore" ? (S.now > S.flatline_at ? [[Math.max(S.flatline_at, t0), t1]] : []) : deadZones(evs, S, t0, t1, zoom ? t0 : A.from ?? 0);
   const W = narrow ? 360 : 720, H = narrow ? 230 : 236, L = narrow ? 30 : 40, R = W - 8, top = 46, base = 196;
   const X = (t) => L + (t - t0) / span * (R - L);
   const max = Math.max(1, ...buckets.map((b) => b.n));
@@ -1008,8 +1017,11 @@ async function activityPanel(src, S) {
     return mark(EV[e.kind].shape, Math.round((X(e.t) + dx) * 10) / 10, lane + dy, EV[e.kind].c);
   }).join("");
   let ticks = "";
-  const nt = narrow ? 2 : 4;
-  for (let i = 0; i <= nt; i++) { const t = t0 + span * i / nt; ticks += `<text x="${X(t)}" y="${base + 20}" text-anchor="${i === 0 ? "start" : i === nt ? "end" : "middle"}" fill="var(--dim)" font-size="11">${i === nt ? "now" : fmtWhen(t, span)}</text>`; }
+  const nt = narrow ? 2 : 4, lastNow = t1 >= now - 1;
+  for (let i = 0; i <= nt; i++) {
+    const t = i === nt ? t1 : t0 + (t1 - t0) * i / nt;
+    ticks += `<text x="${Math.min(X(t), R)}" y="${base + 20}" text-anchor="${i === 0 ? "start" : i === nt ? "end" : "middle"}" fill="var(--dim)" font-size="11">${i === nt && lastNow ? "now" : fmtWhen(t, t1 - t0)}</text>`;
+  }
   const hits = buckets.map((b, i) => `<rect class="hit" data-i="${i}" x="${L + i * slot}" y="0" width="${slot}" height="${base}" fill="transparent"/>`).join("");
   const kinds = [...new Set(evs.map((e) => e.kind))];
   const legend = `<div class="legend">
@@ -1024,7 +1036,12 @@ async function activityPanel(src, S) {
     : A.source === "lore" ? `Transfer history is unavailable right now (${esc(A.error || "indexer")}), so this shows the on-chain lore and the current deadline only.`
     : A.partial ? "Showing the most recent 200 transactions (via FastNEAR); deaths and revivals from the contract's own lore." : "Transaction history via FastNEAR; deaths and revivals from the contract's own lore.";
   const rows = buckets.filter((b) => b.n || Object.keys(b.ev).length);
-  return `<section class="panel full"><div class="label">Activity — $${sym} transfers per ${fmtDur(bw)}, with every pulse, vote and revival</div>
+  const per = bw % DAY === 0 ? (bw === DAY ? "day" : bw / DAY + " days") : bw % 3600 === 0 ? (bw === 3600 ? "hour" : bw / 3600 + " hours") : bw / 60 + " min";
+  const range = canZoom ? `<div class="actions" style="margin-top:8px">
+      <button data-range="all" class="${zoom ? "" : "primary"}">Since ${A.from ? "earliest loaded" : "launch"}</button>
+      <button data-range="zoom" class="${zoom ? "primary" : ""}">Zoom to activity</button></div>` : "";
+  return `<section class="panel full"><div class="label">Activity — $${sym} transfers per ${per}, with every pulse, vote and revival</div>
+    ${range}
     ${legend}
     <div class="chart"><svg viewBox="0 0 ${W} ${H}" font-family="JetBrains Mono, monospace" role="img" aria-label="Activity chart for $${sym}">
       ${zoneSvg}${g}${bars}<line x1="${L}" x2="${R}" y1="${base}" y2="${base}" stroke="var(--dim)" stroke-width="1"/>${marks}${ticks}
@@ -1036,6 +1053,7 @@ async function activityPanel(src, S) {
     </table></details></section>`;
 }
 function bindChart() {
+  document.querySelectorAll("[data-range]").forEach((b) => b.onclick = () => { RANGE[route().id] = b.dataset.range; render(); });
   const svg = document.querySelector(".chart svg"), tip = $("tip"), xh = $("xhair"), A = window.__ACT;
   if (!svg || !A) return;
   svg.onpointermove = (e) => {
