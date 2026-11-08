@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Revive — the coin its dev can't kill</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #07090b; --panel: #0d1114; --line: #1c2428; --text: #d7e2e0; --dim: #6f7f7d;
+    --alive: #39ff88; --dead: #ff4d5e; --vote: #ffb020; --dao: #8fb8ff;
+    --mono: "JetBrains Mono", ui-monospace, monospace; --sans: "Space Grotesk", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 10;
+    background: repeating-linear-gradient(0deg, rgba(255,255,255,.015) 0 1px, transparent 1px 3px); }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid var(--line); }
+  .brand { font-family: var(--mono); font-weight: 800; letter-spacing: .2em; }
+  .brand span { color: var(--accent, var(--alive)); }
+  .net { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-right: 12px; }
+  button { font-family: var(--mono); font-size: 13px; font-weight: 600; background: transparent; color: var(--text);
+    border: 1px solid var(--line); padding: 10px 14px; border-radius: 6px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent, var(--alive)); color: var(--accent, var(--alive)); }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+  button.primary { background: var(--accent, var(--alive)); color: #041008; border-color: transparent; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.1); color: #041008; }
+  input, select { font-family: var(--mono); font-size: 13px; background: #050708; color: var(--text); border: 1px solid var(--line);
+    padding: 10px; border-radius: 6px; width: 100%; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; grid-template-columns: 1.6fr 1fr; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .label { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+  .monitor { grid-column: 1 / -1; position: relative; overflow: hidden; }
+  .monitor-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  .coin { font-size: 26px; font-weight: 700; }
+  .coin small { font-family: var(--mono); color: var(--dim); font-size: 14px; margin-left: 8px; }
+  .status { font-family: var(--mono); font-weight: 800; font-size: 40px; letter-spacing: .08em; color: var(--accent); text-shadow: 0 0 22px var(--accent); }
+  .status.blink { animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  canvas { width: 100%; height: 170px; display: block; margin: 14px 0 6px; }
+  .readouts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 600px) { .readouts { grid-template-columns: repeat(2, 1fr); } .status { font-size: 30px; } }
+  .readout .v { font-family: var(--mono); font-size: 20px; font-weight: 600; margin-top: 4px; }
+  .lives { color: var(--dead); letter-spacing: 2px; }
+  .row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+  .row:last-child { border-bottom: 0; }
+  .row b { font-family: var(--mono); font-weight: 600; text-align: right; word-break: break-all; }
+  .bar { height: 12px; background: #050708; border: 1px solid var(--line); border-radius: 6px; position: relative; overflow: hidden; margin: 8px 0 4px; }
+  .bar i { position: absolute; top: 0; bottom: 0; left: 0; }
+  .bar .q { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .stack { display: grid; gap: 10px; margin-top: 12px; }
+  .lore { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow: auto; }
+  .lore li { padding: 10px 0 10px 16px; border-left: 2px solid var(--line); position: relative; font-size: 14px; }
+  .lore li::before { content: ""; position: absolute; left: -6px; top: 15px; width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--dim)); }
+  .lore .k { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--c, var(--dim)); }
+  .lore .t { font-family: var(--mono); font-size: 11px; color: var(--dim); float: right; }
+  .director { grid-column: 1 / -1; border-style: dashed; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-top: 12px; }
+  .steps button { text-align: left; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: #111a18; border: 1px solid var(--accent);
+    color: var(--text); font-family: var(--mono); font-size: 13px; padding: 12px 16px; border-radius: 8px; max-width: 90vw; z-index: 20;
+    opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  .toast.err { border-color: var(--dead); }
+  .flash { position: absolute; inset: 0; background: var(--alive); opacity: 0; pointer-events: none; }
+  .flash.go { animation: flash 1.2s ease-out; }
+  @keyframes flash { 0% { opacity: .55; } 100% { opacity: 0; } }
+  .hint { color: var(--dim); font-size: 13px; line-height: 1.5; }
+  a { color: var(--dao); }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">RE<span>VIVE</span></div>
+  <div><span class="net" id="net"></span><button id="connect">Connect wallet</button></div>
+</header>
+
+<main>
+  <section class="panel monitor">
+    <div class="flash" id="flash"></div>
+    <div class="monitor-top">
+      <div>
+        <div class="label">Patient</div>
+        <div class="coin" id="coin">—</div>
+      </div>
+      <div style="text-align:right">
+        <div class="label">Status</div>
+        <div class="status" id="status">…</div>
+      </div>
+    </div>
+    <canvas id="ecg"></canvas>
+    <div class="readouts">
+      <div class="readout"><div class="label" id="deadline-label">Next pulse due</div><div class="v" id="deadline">—</div></div>
+      <div class="readout"><div class="label">Lives</div><div class="v lives" id="lives">—</div></div>
+      <div class="readout"><div class="label">Treasury</div><div class="v" id="treasury">—</div></div>
+      <div class="readout"><div class="label">Supply</div><div class="v" id="supply">—</div></div>
+    </div>
+  </section>
+
+  <section class="panel" id="takeover-panel">
+    <div class="label">Takeover</div>
+    <div id="takeover"></div>
+  </section>
+
+  <section class="panel">
+    <div class="label">Keeper</div>
+    <div id="keeper"></div>
+  </section>
+
+  <section class="panel">
+    <div class="label">Lore — every death and revival, on-chain</div>
+    <ul class="lore" id="lore"></ul>
+  </section>
+
+  <section class="panel">
+    <div class="label">How it works</div>
+    <p class="hint">The keeper must <b>pulse</b> on-chain before every deadline. Miss it and the coin <b>flatlines</b>.
+      Holders who held <i>before</i> the flatline can vote a Sputnik DAO in as the new keeper. Tokens bought after the death count for nothing.
+      If the vote passes, the creator's locked tokens burn, the treasury and links go to the DAO, and the coin gains a life.
+      A late keeper can come back during the vote, but pays a penalty into the treasury.</p>
+  </section>
+
+  <section class="panel director" id="director" hidden>
+    <div class="label">Demo mode — simulated contract, same rules</div>
+    <p class="hint">You are acting as <select id="actor" style="width:auto;display:inline-block"></select>. Run the story in order, or play any actor yourself.</p>
+    <div class="steps" id="steps"></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+// ----------------------------------------------------------------- config
+const params = new URLSearchParams(location.search);
+const CONTRACT_ID = params.get("contract") || "";          // e.g. ?contract=nine.revive.testnet
+const NETWORK = params.get("network") || "testnet";
+const RPCS = NETWORK === "mainnet"
+  ? ["https://free.rpc.fastnear.com", "https://near.drpc.org"]
+  : ["https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"];
+const DEMO = !CONTRACT_ID || params.has("demo");
+const TGAS = "30000000000000";
+
+const YOCTO_NEAR = 10n ** 24n, YOCTO_TOKEN = 10n ** 18n, DAY = 86400;
+const $ = (id) => document.getElementById(id);
+
+// ---------------------------------------------------------------- format
+function fmtTokens(y) {
+  const n = Number(BigInt(y) / YOCTO_TOKEN);
+  if (n >= 1e9) return (n / 1e9).toFixed(2).replace(/\.00$/, "") + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
+}
+function fmtNear(y) {
+  const b = BigInt(y), whole = b / YOCTO_NEAR, frac = (b % YOCTO_NEAR) * 100n / YOCTO_NEAR;
+  return `${whole}.${String(frac).padStart(2, "0")} Ⓝ`;
+}
+function fmtDur(s) {
+  s = Math.max(0, Math.floor(s));
+  const d = Math.floor(s / DAY), h = Math.floor(s % DAY / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
+  return `${m}m ${String(sec).padStart(2, "0")}s`;
+}
+// Weight is micro-tokens x seconds; show it as token-days.
+function fmtWeight(w) {
+  const td = Number(BigInt(w) / 1_000_000n) / DAY;
+  if (td >= 1e9) return (td / 1e9).toFixed(2) + "B token-days";
+  if (td >= 1e6) return (td / 1e6).toFixed(1) + "M token-days";
+  if (td >= 1e3) return (td / 1e3).toFixed(1) + "K token-days";
+  return td.toFixed(1) + " token-days";
+}
+const short = (a) => a && a.length > 28 ? a.slice(0, 12) + "…" + a.slice(-12) : a;
+function toast(msg, err = false) {
+  const t = $("toast"); t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.className = "toast", 3200);
+}
+
+// ------------------------------------------------------- live source (RPC)
+async function rpcView(method, args = {}) {
+  const body = { jsonrpc: "2.0", id: "revive", method: "query", params: {
+    request_type: "call_function", finality: "optimistic", account_id: CONTRACT_ID,
+    method_name: method, args_base64: btoa(JSON.stringify(args)) } };
+  let lastErr;
+  for (const url of RPCS) {
+    try {
+      const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.data || j.error.message);
+      if (j.result.error) throw new Error(j.result.error);
+      return JSON.parse(new TextDecoder().decode(new Uint8Array(j.result.result)));
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
+}
+
+let connector = null, account = null;
+async function setupWallet() {
+  const { NearConnector } = await import("https://esm.sh/@hot-labs/near-connect@0.12.0");
+  connector = new NearConnector({ network: NETWORK });
+  connector.on("wallet:signIn", (t) => { account = t.accounts[0].accountId; refresh(); });
+  connector.on("wallet:signOut", () => { account = null; refresh(); });
+  try { const w = await connector.wallet(); const accs = await w.getAccounts(); account = accs[0]?.accountId || null; } catch {}
+}
+
+const live = {
+  status: () => rpcView("get_status"),
+  lore: async () => { const n = await rpcView("get_lore_count"); return rpcView("get_lore", { from_index: Math.max(0, n - 50), limit: 50 }); },
+  weight: (a) => rpcView("get_vote_weight", { account_id: a }),
+  ballot: (a) => rpcView("get_ballot", { account_id: a }),
+  balance: (a) => rpcView("ft_balance_of", { account_id: a }),
+  me: () => account,
+  async call(method, args = {}, deposit = "0") {
+    if (!account) { await connector.connect(); throw new Error("connect a wallet first"); }
+    const w = await connector.wallet();
+    await w.signAndSendTransaction({ receiverId: CONTRACT_ID, actions: [
+      { type: "FunctionCall", params: { methodName: method, args, gas: TGAS, deposit } }] });
+  },
+};
+
+// -------------------------------------------------- demo source (simulated)
+// Mirrors the contract's rules so the story can be shown without a wallet.
+class Mock {
+  constructor() { this.reset(); }
+  reset() {
+    const t = 1_800_000_000;
+    this.t = t; this.keeper = "dev.testnet"; this.creator = "dev.testnet";
+    this.cfg = { name: "Nine Lives", symbol: "NINE", pulse_interval_secs: 3 * DAY, vote_duration_secs: DAY, quorum_bps: 2000,
+      comeback_penalty: (2n * YOCTO_NEAR).toString(), dao_suffix: ".sputnikv2.testnet", spend_cap: YOCTO_NEAR.toString() };
+    this.lastPulse = t; this.lives = 0; this.treasury = 5n * YOCTO_NEAR; this.count = 0;
+    this.supply = 1_000_000_000n * YOCTO_TOKEN; this.devLocked = 100_000_000n * YOCTO_TOKEN; this.devBurned = 0n; this.devActive = true;
+    const T = (n) => BigInt(n) * YOCTO_TOKEN;
+    this.holders = { "dev.testnet": { bal: T(300e6), since: t }, "alice.testnet": { bal: T(300e6), since: t },
+      "bob.testnet": { bal: T(200e6), since: t }, "carol.testnet": { bal: T(100e6), since: t }, "whale.testnet": { bal: 0n, since: t } };
+    this.takeover = null; this.ballots = {}; this.loreList = [];
+    this.log("born", "dev.testnet", "NINE launched by dev.testnet");
+  }
+  log(kind, actor, note) { this.loreList.push({ at: this.t, kind, actor, note }); }
+  flatlineAt() { return this.lastPulse + this.cfg.pulse_interval_secs; }
+  st() { if (this.takeover) return this.t >= this.takeover.ends_at ? "vote_closed" : "voting"; return this.t > this.flatlineAt() ? "flatlined" : "alive"; }
+  w(a, f) { const h = this.holders[a]; return h && h.since < f ? h.bal / 10n ** 12n * BigInt(f - h.since) : 0n; }
+  eligible(f) { return Object.keys(this.holders).filter((a) => a !== this.keeper && a !== this.creator).reduce((s, a) => s + this.w(a, f), 0n); }
+  fail(m) { throw new Error(m); }
+  advance(s) { this.t += s; }
+  buy(a, tokens) {
+    const amt = BigInt(tokens) * YOCTO_TOKEN, src = this.holders["dev.testnet"], h = this.holders[a];
+    src.bal -= amt; const nb = h.bal + amt; h.since = Number((h.bal * BigInt(h.since) + amt * BigInt(this.t) + nb - 1n) / nb); h.bal = nb;
+  }
+  pulse(by, deposit = 0n) {
+    if (by !== this.keeper) this.fail("only the keeper has a pulse");
+    if (this.t > this.flatlineAt()) {
+      if (this.takeover && this.t >= this.takeover.ends_at) this.fail("the vote has closed; call finalize_takeover first");
+      if (deposit < BigInt(this.cfg.comeback_penalty)) this.fail("late pulse: attach the comeback penalty");
+      const c = this.takeover; this.takeover = null;
+      this.log("comeback", by, `came back ${fmtDur(this.t - this.flatlineAt())} late and paid ${fmtNear(deposit)}` + (c ? `; takeover #${c.id} cancelled` : ""));
+    }
+    this.treasury += deposit; this.lastPulse = this.t;
+  }
+  startTakeover(by, steward) {
+    if (this.takeover) this.fail("a takeover vote is already open");
+    if (this.t <= this.flatlineAt()) this.fail("the coin still has a pulse");
+    if (by === this.keeper || by === this.creator) this.fail("the keeper and creator cannot start a takeover");
+    const f = this.flatlineAt();
+    if (this.w(by, f) === 0n) this.fail("only holders from before the flatline can start a takeover");
+    if (!steward.endsWith(this.cfg.dao_suffix)) this.fail("the steward must be a Sputnik DAO");
+    if (steward === this.keeper) this.fail("the steward must be a new account");
+    this.count++;
+    this.takeover = { id: this.count, steward, proposer: by, started_at: this.t, ends_at: this.t + this.cfg.vote_duration_secs,
+      flatline_at: f, yes: "0", no: "0", total_eligible: this.eligible(f).toString(), voters: 0 };
+    this.log("flatline", this.keeper, `no pulse since ${new Date(this.lastPulse * 1000).toUTCString().slice(5, 22)}`);
+    this.log("takeover", by, `takeover #${this.count} opened: ${steward} nominated as keeper`);
+  }
+  vote(by, support) {
+    const tk = this.takeover; if (!tk) this.fail("no takeover vote is open");
+    if (this.t >= tk.ends_at) this.fail("the vote has closed");
+    if (by === this.keeper || by === this.creator) this.fail("the keeper and creator cannot vote");
+    if (this.ballots[tk.id + by]) this.fail("already voted");
+    const wt = this.w(by, tk.flatline_at); if (wt === 0n) this.fail("no voting weight: only tokens held before the flatline count");
+    tk[support ? "yes" : "no"] = (BigInt(tk[support ? "yes" : "no"]) + wt).toString(); tk.voters++;
+    this.ballots[tk.id + by] = { support, weight: wt.toString() };
+  }
+  finalize() {
+    const tk = this.takeover; if (!tk) this.fail("no takeover vote is open");
+    if (this.t < tk.ends_at) this.fail("the vote is still open");
+    this.takeover = null;
+    const yes = BigInt(tk.yes), no = BigInt(tk.no), q = yes * 10000n >= BigInt(tk.total_eligible) * BigInt(this.cfg.quorum_bps);
+    if (!(yes > no && q)) { this.log("takeover_failed", "anyone", `takeover #${tk.id} failed: ${yes <= no ? "holders voted no" : "quorum not reached"}`); return false; }
+    const old = this.keeper; this.keeper = tk.steward; let burned = 0n;
+    if (this.devActive) { burned = this.devLocked; this.devBurned = burned; this.supply -= burned; this.devLocked = 0n; this.devActive = false; }
+    this.lastPulse = this.t; this.lives++;
+    this.log("revived", tk.steward, `life #${this.lives}: keeper ${old} replaced by ${tk.steward}; ${fmtTokens(burned)} creator tokens burned`);
+    return true;
+  }
+  // source interface
+  async status() {
+    return { status: this.st(), now: this.t, keeper: this.keeper, creator: this.creator, lives: this.lives, last_pulse: this.lastPulse,
+      flatline_at: this.flatlineAt(), total_supply: this.supply.toString(), treasury: this.treasury.toString(),
+      dev_locked: this.devLocked.toString(), dev_burned: this.devBurned.toString(), takeover: this.takeover && { ...this.takeover },
+      takeover_count: this.count, config: this.cfg, links: "x.com/ninelives" };
+  }
+  async lore() { return this.loreList.slice(-50); }
+  async weight(a) { if (a === this.keeper || a === this.creator) return "0"; return this.w(a, this.takeover ? this.takeover.flatline_at : this.flatlineAt()).toString(); }
+  async ballot(a) { return this.takeover ? this.ballots[this.takeover.id + a] || null : null; }
+  async balance(a) { return (this.holders[a]?.bal || 0n).toString(); }
+  me() { return $("actor").value; }
+  async call(method, args = {}, deposit = "0") {
+    const by = this.me();
+    if (method === "pulse") return this.pulse(by, BigInt(deposit));
+    if (method === "start_takeover") return this.startTakeover(by, args.steward);
+    if (method === "vote") return this.vote(by, args.support);
+    if (method === "finalize_takeover") { const ok = this.finalize(); if (ok) revivedFx(); return ok; }
+    this.fail("not in the demo: " + method);
+  }
+}
+
+const src = DEMO ? new Mock() : live;
+
+// ----------------------------------------------------------------- render
+let S = null;
+const COLORS = { alive: "--alive", flatlined: "--dead", voting: "--vote", vote_closed: "--vote" };
+const LABEL = { alive: "ALIVE", flatlined: "FLATLINED", voting: "TAKEOVER VOTE", vote_closed: "VOTE CLOSED" };
+const LORE_C = { born: "--alive", pulse: "--alive", comeback: "--vote", flatline: "--dead", takeover: "--vote",
+  takeover_failed: "--dead", revived: "--alive", spend: "--dao", links: "--dao" };
+
+async function refresh() {
+  try {
+    S = await src.status();
+  } catch (e) { $("status").textContent = "NO SIGNAL"; toast("Could not reach the contract: " + e.message, true); return; }
+  const me = src.me();
+  const accent = getComputedStyle(document.documentElement).getPropertyValue(COLORS[S.status]);
+  document.documentElement.style.setProperty("--accent", accent);
+  $("coin").innerHTML = `${S.config.name}<small>$${S.config.symbol}</small>`;
+  $("status").textContent = LABEL[S.status];
+  $("status").className = "status" + (S.status === "flatlined" ? " blink" : "");
+  const dead = S.now > S.flatline_at;
+  $("deadline-label").textContent = dead ? "Flatlined for" : "Next pulse due in";
+  $("deadline").textContent = fmtDur(dead ? S.now - S.flatline_at : S.flatline_at - S.now);
+  $("lives").textContent = S.lives ? "♥".repeat(Math.min(S.lives, 9)) + (S.lives > 9 ? ` ×${S.lives}` : "") : "0";
+  $("treasury").textContent = fmtNear(S.treasury);
+  $("supply").textContent = fmtTokens(S.total_supply);
+  $("net").textContent = DEMO ? "DEMO · simulated" : `${NETWORK} · ${short(CONTRACT_ID)}`;
+  $("connect").textContent = DEMO ? "Demo mode" : (me ? short(me) : "Connect wallet");
+  $("connect").disabled = DEMO;
+
+  const isKeeper = me === S.keeper;
+  $("keeper").innerHTML = `
+    <div class="row"><span>Keeper</span><b style="color:${S.keeper.endsWith(S.config.dao_suffix) ? "var(--dao)" : "inherit"}">${S.keeper}</b></div>
+    <div class="row"><span>Creator</span><b>${S.creator}</b></div>
+    <div class="row"><span>Creator tokens locked</span><b>${fmtTokens(S.dev_locked)}</b></div>
+    <div class="row"><span>Creator tokens burned</span><b style="color:${BigInt(S.dev_burned) > 0n ? "var(--dead)" : "inherit"}">${fmtTokens(S.dev_burned)}</b></div>
+    <div class="row"><span>Comeback penalty</span><b>${fmtNear(S.config.comeback_penalty)}</b></div>
+    <div class="actions">${isKeeper ? `<button class="primary" id="b-pulse">${dead ? "Come back (pay penalty)" : "Pulse ♥"}</button>` : `<span class="hint">Only the keeper can pulse.</span>`}</div>`;
+  if (isKeeper) $("b-pulse").onclick = () => act("pulse", {}, dead ? S.config.comeback_penalty : "0", dead ? "Back from the dead. Penalty paid to the treasury." : "Pulse sent. Still alive.");
+
+  await renderTakeover(me);
+  const lore = await src.lore();
+  $("lore").innerHTML = lore.slice().reverse().map((l) =>
+    `<li style="--c:var(${LORE_C[l.kind] || "--dim"})"><span class="t">${new Date(l.at * 1000).toISOString().slice(0, 16).replace("T", " ")}</span>
+      <div class="k">${l.kind.replace("_", " ")}</div>${l.note}</li>`).join("");
+}
+
+async function renderTakeover(me) {
+  const tk = S.takeover, box = $("takeover");
+  const weight = me ? BigInt(await src.weight(me)) : 0n;
+  if (!tk) {
+    if (S.status !== "flatlined") {
+      box.innerHTML = `<p class="hint">No takeover. The keeper still has a pulse, so holders can't take over.</p>
+        <div class="row"><span>Your vote weight if it flatlines</span><b>${fmtWeight(weight)}</b></div>`;
+      return;
+    }
+    box.innerHTML = `<p class="hint">The keeper missed the deadline. Any holder from before the flatline can nominate a Sputnik DAO as the new keeper.</p>
+      <div class="row"><span>Your vote weight</span><b>${fmtWeight(weight)}</b></div>
+      <div class="stack"><input id="steward" placeholder="yourcoin${S.config.dao_suffix}" value="${DEMO ? "ninelives" + S.config.dao_suffix : ""}">
+      <button class="primary" id="b-start">Start takeover</button></div>`;
+    $("b-start").onclick = () => act("start_takeover", { steward: $("steward").value.trim() }, "0", "Takeover opened. Holders, vote.");
+    return;
+  }
+  const yes = BigInt(tk.yes), no = BigInt(tk.no), total = BigInt(tk.total_eligible) || 1n;
+  const pct = (x) => Number(x * 10000n / total) / 100;
+  const ballot = me ? await src.ballot(me) : null;
+  const closed = S.now >= tk.ends_at;
+  box.innerHTML = `
+    <div class="row"><span>Nominee</span><b style="color:var(--dao)">${tk.steward}</b></div>
+    <div class="row"><span>${closed ? "Vote closed" : "Vote ends in"}</span><b>${closed ? "finalize it" : fmtDur(tk.ends_at - S.now)}</b></div>
+    <div class="label" style="margin-top:12px">Yes ${pct(yes)}% · No ${pct(no)}% · quorum ${S.config.quorum_bps / 100}%</div>
+    <div class="bar"><i style="width:${pct(yes)}%;background:var(--alive)"></i><i style="left:${pct(yes)}%;width:${pct(no)}%;background:var(--dead)"></i>
+      <span class="q" style="left:${S.config.quorum_bps / 100}%"></span></div>
+    <div class="row"><span>Voters</span><b>${tk.voters}</b></div>
+    <div class="row"><span>Your weight</span><b>${fmtWeight(weight)}</b></div>
+    <div class="actions">${closed ? `<button class="primary" id="b-final">Finalize</button>` :
+      ballot ? `<span class="hint">You voted ${ballot.support ? "YES" : "NO"}.</span>` :
+      weight === 0n ? `<span class="hint" style="color:var(--dead)">No vote: you held nothing before the flatline. Tokens bought after the death don't count.</span>` :
+      `<button class="primary" id="b-yes">Vote yes, revive</button><button id="b-no">Vote no</button>`}</div>`;
+  if (closed) $("b-final").onclick = () => act("finalize_takeover", {}, "0", "Vote finalized.");
+  else if (!ballot && weight > 0n) {
+    $("b-yes").onclick = () => act("vote", { support: true }, "0", "Voted YES.");
+    $("b-no").onclick = () => act("vote", { support: false }, "0", "Voted NO.");
+  }
+}
+
+async function act(method, args, deposit, ok) {
+  try { await src.call(method, args, deposit); toast(ok); }
+  catch (e) { toast(e.message.replace(/^.*Smart contract panicked: /, ""), true); }
+  await refresh();
+}
+
+function revivedFx() { const f = $("flash"); f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); ecg.kick = 1; }
+
+// ----------------------------------------------------------------- ECG
+const ecg = { x: 0, kick: 0, last: [] };
+function drawEcg() {
+  const c = $("ecg"), dpr = devicePixelRatio || 1;
+  if (c.width !== c.clientWidth * dpr) { c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr; ecg.last = []; ecg.x = 0; }
+  const g = c.getContext("2d"), W = c.width, H = c.height, mid = H * 0.6;
+  const status = S ? S.status : "alive";
+  const color = getComputedStyle(document.documentElement).getPropertyValue(COLORS[status] || "--alive").trim();
+  const speed = 2.2 * dpr;
+  for (let i = 0; i < 2; i++) {
+    ecg.x = (ecg.x + speed) % W;
+    const phase = (performance.now() / 900) % 1;
+    let y = mid + (Math.random() - 0.5) * 1.5 * dpr;
+    if (ecg.kick > 0) { y = mid - Math.sin(ecg.kick * Math.PI) * H * 0.55; ecg.kick = Math.max(0, ecg.kick - 0.02); }
+    else if (status === "alive") {
+      const p = phase;
+      if (p > .10 && p < .14) y -= H * .06 * Math.sin((p - .10) / .04 * Math.PI);
+      if (p > .20 && p < .22) y += H * .08;
+      if (p > .22 && p < .25) y -= H * .45 * Math.sin((p - .22) / .03 * Math.PI);
+      if (p > .25 && p < .27) y += H * .12;
+      if (p > .40 && p < .48) y -= H * .09 * Math.sin((p - .40) / .08 * Math.PI);
+    } else if (status === "voting") {
+      if (phase > .5 && phase < .53) y -= H * .05 * Math.sin((phase - .5) / .03 * Math.PI);
+    }
+    ecg.last[Math.floor(ecg.x / dpr)] = y;
+  }
+  g.clearRect(0, 0, W, H);
+  g.strokeStyle = "rgba(255,255,255,.04)"; g.lineWidth = 1;
+  for (let gx = 0; gx < W; gx += 24 * dpr) { g.beginPath(); g.moveTo(gx, 0); g.lineTo(gx, H); g.stroke(); }
+  for (let gy = 0; gy < H; gy += 24 * dpr) { g.beginPath(); g.moveTo(0, gy); g.lineTo(W, gy); g.stroke(); }
+  g.strokeStyle = color; g.lineWidth = 2.2 * dpr; g.shadowColor = color; g.shadowBlur = 12 * dpr;
+  g.beginPath();
+  const head = Math.floor(ecg.x / dpr), cols = Math.floor(W / dpr);
+  for (let i = 0; i < cols; i++) {
+    if (Math.abs(i - head) < 14 && i > head) continue;       // gap ahead of the sweep
+    const y = ecg.last[i] ?? mid;
+    if (i === 0 || i === head + 14) g.moveTo(i * dpr, y); else g.lineTo(i * dpr, y);
+  }
+  g.stroke(); g.shadowBlur = 0;
+  g.fillStyle = color; g.beginPath(); g.arc(ecg.x, ecg.last[head] ?? mid, 3.5 * dpr, 0, 7); g.fill();
+  requestAnimationFrame(drawEcg);
+}
+
+// --------------------------------------------------------------- director
+function setupDirector() {
+  $("director").hidden = false;
+  const actors = ["alice.testnet", "bob.testnet", "carol.testnet", "whale.testnet", "dev.testnet", "ninelives.sputnikv2.testnet"];
+  $("actor").innerHTML = actors.map((a) => `<option>${a}</option>`).join("");
+  const as = (a) => { $("actor").value = a; };
+  const m = src;
+  const steps = [
+    ["1 · Dev pulses", () => { as("dev.testnet"); m.advance(DAY); m.pulse("dev.testnet"); return "Dev pulsed. The coin is alive."; }],
+    ["2 · Dev goes silent (+3 days)", () => { m.advance(3 * DAY + 60); return "No pulse. FLATLINE."; }],
+    ["3 · Whale buys 250M after death", () => { m.buy("whale.testnet", 250_000_000); return "Whale bought 250M — after the flatline."; }],
+    ["4 · Alice opens takeover", () => { as("alice.testnet"); m.startTakeover("alice.testnet", "ninelives.sputnikv2.testnet"); return "Takeover opened: ninelives DAO nominated."; }],
+    ["5 · Alice votes yes", () => { as("alice.testnet"); m.vote("alice.testnet", true); return "Alice: YES."; }],
+    ["6 · Whale tries to vote no", () => { as("whale.testnet"); m.vote("whale.testnet", false); }],
+    ["7 · Bob votes yes", () => { as("bob.testnet"); m.vote("bob.testnet", true); return "Bob: YES."; }],
+    ["8 · Carol votes no", () => { as("carol.testnet"); m.vote("carol.testnet", false); return "Carol: NO."; }],
+    ["9 · Vote ends (+1 day)", () => { m.advance(DAY); return "Vote closed."; }],
+    ["10 · Finalize → REVIVE", () => { as("bob.testnet"); const ok = m.finalize(); if (ok) revivedFx(); return ok ? "REVIVED. Life #" + m.lives + ". Dev tokens burned." : "Takeover failed."; }],
+    ["11 · DAO pulses as keeper", () => { as("ninelives.sputnikv2.testnet"); m.advance(DAY); m.pulse("ninelives.sputnikv2.testnet"); return "The DAO keeps the heart beating."; }],
+    ["Alt · Dev comes back mid-vote", () => { as("dev.testnet"); m.pulse("dev.testnet", 2n * YOCTO_NEAR); return "Comeback: 2 Ⓝ penalty to the treasury, vote cancelled."; }],
+    ["↺ Reset", () => { m.reset(); as("alice.testnet"); return "Reset."; }],
+  ];
+  $("steps").innerHTML = steps.map(([l], i) => `<button data-i="${i}">${l}</button>`).join("");
+  $("steps").onclick = async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    try { const msg = steps[b.dataset.i][1](); if (msg) toast(msg); } catch (err) { toast("Rejected: " + err.message, true); }
+    await refresh();
+  };
+  $("actor").onchange = refresh;
+}
+
+// ------------------------------------------------------------------- boot
+if (DEMO) setupDirector();
+else {
+  setupWallet().then(refresh);
+  $("connect").onclick = async () => {
+    if (account) { const w = await connector.wallet(); await w.signOut(); account = null; refresh(); }
+    else connector.connect();
+  };
+}
+requestAnimationFrame(drawEcg);
+refresh();
+setInterval(() => { if (!DEMO) refresh(); else if (S) { $("deadline").textContent = fmtDur(Math.abs(S.flatline_at - S.now)); } }, DEMO ? 1000 : 6000);
+</script>
+</body>
+</html>
