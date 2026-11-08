@@ -108,24 +108,6 @@
   .steps-how div::before { content: counter(s); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%;
     border: 1px solid var(--alive); color: var(--alive); font-family: var(--mono); display: grid; place-items: center; font-size: 13px; }
   a { color: var(--dao); }
-  .strip { display: grid; grid-template-columns: 170px minmax(0, 1fr) 44px; align-items: center; gap: 12px; padding: 7px 0; cursor: pointer; }
-  .strip.on .sname { color: var(--text); }
-  .sname { font-size: 13px; color: var(--dim); }
-  .cells { display: grid; grid-template-columns: repeat(61, minmax(0, 1fr)); gap: 2px; height: 22px; min-width: 0; }
-  .cells i { border-radius: 2px; position: relative; }
-  .cells i.ev::after { content: ""; position: absolute; left: 50%; top: -5px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--text); }
-  .strip .lv { font-family: var(--mono); font-size: 12px; color: var(--dead); text-align: right; }
-  @media (max-width: 700px) { .strip { grid-template-columns: minmax(0, 1fr); gap: 4px; } .strip .lv { text-align: left; } .cells { gap: 1px; } }
-  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--dim); margin-top: 10px; }
-  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
-  .chart { position: relative; }
-  .chart svg { width: 100%; height: auto; display: block; }
-  .tip { position: absolute; pointer-events: none; background: #111a18; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-family: var(--mono); font-size: 12px; white-space: nowrap; display: none; z-index: 5; }
-  table.sum { width: 100%; border-collapse: collapse; font-size: 13px; }
-  table.sum th { text-align: left; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); font-weight: 400; padding: 8px 6px; border-bottom: 1px solid var(--line); }
-  table.sum td { padding: 9px 6px; border-bottom: 1px dashed var(--line); font-family: var(--mono); }
-  table.sum td:first-child { font-family: var(--sans); }
-  .tablewrap { overflow-x: auto; }
   .empty { padding: 30px; text-align: center; color: var(--dim); border: 1px dashed var(--line); border-radius: 8px; }
 </style>
 </head>
@@ -135,7 +117,6 @@
   <nav>
     <a href="#/" data-nav="watch">Flatline Watch</a>
     <a href="#/launch" data-nav="launch">Launch</a>
-    <a href="#/simulation" data-nav="simulation">Simulation</a>
     <a href="#/how" data-nav="how">How it works</a>
   </nav>
   <div><span class="net" id="net"></span><button id="connect">Connect wallet</button></div>
@@ -421,7 +402,7 @@ async function render() {
   $("connect").textContent = DEMO ? "Demo mode" : (account ? short(account) : "Connect wallet");
   $("connect").disabled = DEMO;
   try {
-    const html = r.page === "coin" ? await coinView(r) : r.page === "launch" ? await launchView() : r.page === "how" ? howView() : r.page === "simulation" ? await simView() : await watchView();
+    const html = r.page === "coin" ? await coinView(r) : r.page === "launch" ? await launchView() : r.page === "how" ? howView() : await watchView();
     if (my !== renderId) return;
     $("view").innerHTML = html;
     bind(r);
@@ -528,98 +509,6 @@ function readLaunch(form) {
   };
   const deposit = (BigInt(near(f.seed)) + LAUNCH_COST).toString();
   return { name: f.name.trim(), config, deposit };
-}
-
-// ------------------------------------------------------------- Simulation
-let SIM = null, SIM_SEL = "revival";
-const ST_C = { alive: "--alive", flatlined: "--dead", voting: "--vote", vote_closed: "--vote" };
-async function simView() {
-  setAccent("alive");
-  if (!SIM) SIM = await fetch("simulation.json").then((r) => r.json());
-  const sc = SIM.scenarios.find((x) => x.id === SIM_SEL) || SIM.scenarios[0];
-  const strips = SIM.scenarios.map((x) => `
-    <div class="strip ${x.id === sc.id ? "on" : ""}" data-sim="${x.id}">
-      <span class="sname">${esc(x.name)}</span>
-      <div class="cells">${x.days.map((d) => `<i style="background:var(${ST_C[d.status]})" class="${x.events.some((e) => e.day === d.day && e.kind !== "launch") ? "ev" : ""}" data-sc="${x.id}" data-d="${d.day}"></i>`).join("")}</div>
-      <span class="lv">${x.days.at(-1).lives ? "♥".repeat(x.days.at(-1).lives) : ""}</span>
-    </div>`).join("");
-  const last = (x) => x.days.at(-1);
-  const rows = SIM.scenarios.map((x) => `<tr><td>${esc(x.name)}</td><td style="color:var(${ST_C[last(x).status]})">${LABEL[last(x).status]}</td>
-    <td>${last(x).lives}</td><td>${(last(x).supply / 1e6).toFixed(1)}M</td><td>${(last(x).dev_burned / 1e6).toFixed(1)}M</td><td>${last(x).treasury.toFixed(2)} Ⓝ</td></tr>`).join("");
-  const P = SIM.params;
-  return `
-    <section class="panel full">
-      <div class="label">60-day simulation — the real contract, a moving clock, six communities</div>
-      <p class="hint">Each scenario drives the actual Revive contract (contract/examples/simulate.rs) through 60 days: 12 holders,
-        daily buys and tips, a keeper who pulses every other day until they don't. Supply ${P.supply}; creator ${P.creator_locked};
-        pulse every ${P.pulse_interval}; vote ${P.vote}; quorum ${P.quorum}; penalty ${P.comeback_penalty}.</p>
-      <div style="margin-top:14px">${strips}</div>
-      <div class="legend"><span style="--c:var(--alive)">Alive</span><span style="--c:var(--dead)">Flatlined</span><span style="--c:var(--vote)">Takeover vote</span><span style="--c:var(--text)">• event</span><span>♥ lives at day 60</span></div>
-      <div class="tip" id="striptip"></div>
-    </section>
-    <section class="panel">
-      <div class="label">${esc(sc.name)} — total supply (tokens)</div>
-      ${lineChart(sc, "supply", (v) => (v / 1e6).toFixed(0) + "M", "--dao")}
-      <div class="label" style="margin-top:16px">${esc(sc.name)} — treasury (NEAR)</div>
-      ${lineChart(sc, "treasury", (v) => v.toFixed(2) + " Ⓝ", "--alive")}
-    </section>
-    <section class="panel">
-      <div class="label">What happened</div>
-      <p class="hint">${esc(sc.blurb)}</p>
-      <ul class="lore">${sc.events.map((e) => `<li style="--c:var(${({ revived: "--alive", silent: "--dead", takeover: "--vote", vote: "--vote", whale: "--dead", rejected: "--dead", failed: "--dead", comeback: "--vote" })[e.kind] || "--dim"})">
-        <span class="t">day ${e.day}</span><div class="k">${esc(e.kind)}</div>${esc(e.text)}</li>`).join("")}</ul>
-    </section>
-    <section class="panel full">
-      <div class="label">Day 60, side by side</div>
-      <div class="tablewrap"><table class="sum"><thead><tr><th>Scenario</th><th>Status</th><th>Lives</th><th>Supply</th><th>Creator burned</th><th>Treasury</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="hint" style="margin-top:10px">Rerun it yourself: <span class="mono">cd contract &amp;&amp; cargo run --example simulate</span>, which rewrites web/simulation.json.</p>
-    </section>`;
-}
-function lineChart(sc, key, fmt, color) {
-  const W = 600, H = 190, L = 58, R = 28, T = 12, B = 26;
-  const vals = sc.days.map((d) => d[key]);
-  let lo = Math.min(...vals), hi = Math.max(...vals);
-  if (hi - lo < 1e-9) { lo = lo * 0.9; hi = hi * 1.05 || 1; }
-  const raw = (hi - lo) / 3, mag = 10 ** Math.floor(Math.log10(raw)), step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((v) => v >= raw);
-  lo = Math.max(0, Math.floor(lo / step) * step); hi = Math.ceil(hi / step) * step;
-  const x = (d) => L + (W - L - R) * d / 60, y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
-  const ticks = []; for (let v = lo; v <= hi + step / 2; v += step) ticks.push(v);
-  const path = sc.days.map((d, i) => `${i ? "L" : "M"}${x(d.day).toFixed(1)},${y(d[key]).toFixed(1)}`).join("");
-  const data = esc(JSON.stringify(sc.days.map((d) => [d.day, d[key], d.status])));
-  return `<div class="chart" data-chart='${data}' data-fmt="${key}">
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(sc.name)} ${key} over 60 days">
-      ${ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="rgba(255,255,255,.06)"/><text x="${L - 6}" y="${y(t) + 4}" fill="#6f7f7d" font-size="10" text-anchor="end" font-family="JetBrains Mono">${fmt(t)}</text>`).join("")}
-      ${[0, 15, 30, 45, 60].map((d) => `<text x="${x(d)}" y="${H - 8}" fill="#6f7f7d" font-size="10" text-anchor="middle" font-family="JetBrains Mono">day ${d}</text>`).join("")}
-      <path d="${path}" fill="none" stroke="var(${color})" stroke-width="2" vector-effect="non-scaling-stroke"/>
-      <line class="xh" y1="${T}" y2="${H - B}" stroke="rgba(255,255,255,.25)" visibility="hidden"/>
-    </svg><div class="tip"></div></div>`;
-}
-function bindSim() {
-  document.querySelectorAll("[data-sim]").forEach((el) => el.onclick = () => { SIM_SEL = el.dataset.sim; render(); });
-  const tip = $("striptip");
-  document.querySelectorAll(".cells i").forEach((c) => {
-    c.onmouseenter = () => {
-      const sc = SIM.scenarios.find((x) => x.id === c.dataset.sc), d = sc.days[+c.dataset.d];
-      const ev = sc.events.filter((e) => e.day === d.day && e.kind !== "launch").map((e) => e.text).join("<br>");
-      tip.innerHTML = `${esc(sc.name)} · day ${d.day}<br>${LABEL[d.status]} · lives ${d.lives}<br>supply ${(d.supply / 1e6).toFixed(1)}M · treasury ${d.treasury.toFixed(2)} Ⓝ${ev ? "<br><span style='color:var(--vote)'>" + ev + "</span>" : ""}`;
-      const r = c.getBoundingClientRect(), p = tip.parentElement.getBoundingClientRect();
-      tip.style.display = "block"; tip.style.left = Math.min(r.left - p.left, p.width - 280) + "px"; tip.style.top = (r.bottom - p.top + 8) + "px";
-    };
-    c.onmouseleave = () => tip.style.display = "none";
-  });
-  document.querySelectorAll(".chart").forEach((ch) => {
-    const pts = JSON.parse(ch.dataset.chart), svg = ch.querySelector("svg"), xh = ch.querySelector(".xh"), t = ch.querySelector(".tip");
-    const isSupply = ch.dataset.fmt === "supply";
-    svg.onmousemove = (e) => {
-      const b = svg.getBoundingClientRect(), fx = (e.clientX - b.left) / b.width * 600;
-      const day = Math.max(0, Math.min(60, Math.round((fx - 58) / (600 - 86) * 60)));
-      const [d, v, st] = pts[day], px = 58 + (600 - 86) * d / 60;
-      xh.setAttribute("x1", px); xh.setAttribute("x2", px); xh.setAttribute("visibility", "visible");
-      t.innerHTML = `day ${d} · ${isSupply ? (v / 1e6).toFixed(1) + "M tokens" : v.toFixed(2) + " Ⓝ"} · ${LABEL[st]}`;
-      t.style.display = "block"; t.style.left = Math.min(px / 600 * b.width + 8, b.width - 230) + "px"; t.style.top = "6px";
-    };
-    svg.onmouseleave = () => { xh.setAttribute("visibility", "hidden"); t.style.display = "none"; };
-  });
 }
 
 // ------------------------------------------------------------------- How
@@ -806,7 +695,6 @@ function bind(r) {
     };
     if ($("ecg")) startEcg();
   }
-  if (r.page === "simulation") bindSim();
   if (r.page === "launch") {
     const form = $("launch");
     const cost = () => { try { const { deposit } = readLaunch(form); $("cost").textContent = `You'll attach ${fmtNear(deposit)} (${fmtNear(LAUNCH_COST)} storage + treasury seed).`; } catch {} };

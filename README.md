@@ -33,9 +33,8 @@ Open **Nine Lives** and click the story buttons in order.
 | Click **Nine Lives** → **Verify** | Six checks from RPC: no access keys on the coin, its code hash equals the factory's, the factory has no keys, treasury backed, supply adds up (100M burned), and who the keeper is |
 | Click **Lore** | The coin's on-chain history: born, flatline, takeover, revived |
 | Open [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) → **Nine Lives**, click steps 1–11 | The full story with no wallet: a whale's post-death vote is refused, the coin revives, the DAO pulses |
-| Open **Simulation** | Six 60-day scenarios run on the real contract: alive / flatlined / voting per day, supply and treasury charts |
 | `cd contract && cargo test` | `21 passed` (plus `cd factory && cargo test`: `7 passed`) |
-| `cd contract && cargo run --example simulate` | The six scenarios' day-60 results printed; `web/simulation.json` rewritten |
+| `cd contract && cargo run --example simulate` | The [60-day simulation](#60-day-simulation): six scenarios' day-60 results printed; `docs/simulation.json` rewritten |
 | Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | Both stories on a local NEAR node, every step checked (`All checks passed`) |
 | [testnet-demo run](https://github.com/Mhiah/Revive/actions/workflows/testnet-demo.yml) | The same stories on NEAR testnet, against the coins above |
 
@@ -111,7 +110,7 @@ every other day until they don't. Parameters: 1B supply, 10% creator allocation 
 What it shows: supply only ever falls, and only by the creator's *unvested* tokens on the first revival
 (the 7.2M the dev vested while alive stay theirs). A whale arriving after the death changes nothing. A comeback is
 possible but costs the dev, and the penalty stays with holders. Each extra life costs nothing to supply.
-The interactive version is the **Simulation** page of the app.
+Full day-by-day data: [docs/simulation.json](docs/simulation.json).
 
 ## The app
 
@@ -122,7 +121,6 @@ The interactive version is the **Simulation** page of the app.
 | **Coin · Monitor** | A live heart monitor (green alive, red flatlined, amber voting), countdown, lives, treasury, the takeover vote and the keeper. |
 | **Coin · Verify** | Six checks read live from NEAR RPC: no access keys on the coin, same code hash as the factory (with the hex to compare against CI), factory locked, treasury backed, supply adds up, keeper is a DAO. |
 | **Coin · Lore** | Every birth, death, takeover, comeback and revival, from the contract. |
-| **Simulation** | The 60-day scenarios below: a heartbeat timeline per scenario, supply and treasury charts with hover, event log, day-60 table. |
 
 Every number is a direct RPC read. There is no indexer or backend.
 
@@ -219,9 +217,8 @@ contract/            the coin (near-sdk 5.30)
   src/tests.rs       21 unit tests
 factory/             launches coins as <name>.<factory>; 7 unit tests
 contract/examples/   simulate.rs: 60 days x 6 scenarios on the real contract
-web/index.html       the app: Flatline Watch, Launch, Simulation, coin Monitor / Verify / Lore, demo mode
-web/simulation.json  output of the simulation, read by the Simulation page
-docs/                README images
+web/index.html       the app: Flatline Watch, Launch, coin Monitor / Verify / Lore, demo mode
+docs/                simulation data and README images
 scripts/             demo-coins.mjs (deploy + both stories), sandbox-e2e.mjs, Sputnik DAO how-to
 .github/workflows/   CI (tests, lints, wasm, sandbox e2e), Pages, testnet-demo
 ```

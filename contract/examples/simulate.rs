@@ -1,5 +1,5 @@
 //! 60-day simulation that drives the real Revive contract (not a model) through
-//! six community scenarios and writes web/simulation.json for the Simulation page.
+//! six community scenarios and writes docs/simulation.json (the data behind the README's simulation section).
 //!
 //!     cd contract && cargo run --example simulate
 //!
@@ -302,7 +302,7 @@ fn main() {
         // Each scenario runs on its own thread: the mocked chain storage is per thread.
         "scenarios": plans.into_iter().map(|p| std::thread::spawn(move || run(&p)).join().unwrap()).collect::<Vec<_>>(),
     });
-    let path = std::env::args().nth(1).unwrap_or_else(|| "../web/simulation.json".into());
+    let path = std::env::args().nth(1).unwrap_or_else(|| "../docs/simulation.json".into());
     std::fs::write(&path, near_sdk::serde_json::to_string_pretty(&out).unwrap()).unwrap();
     for sc in out["scenarios"].as_array().unwrap() {
         let last = sc["days"].as_array().unwrap().last().unwrap();
