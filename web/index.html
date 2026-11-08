@@ -108,6 +108,21 @@
   .steps-how div::before { content: counter(s); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%;
     border: 1px solid var(--alive); color: var(--alive); font-family: var(--mono); display: grid; place-items: center; font-size: 13px; }
   a { color: var(--dao); }
+  .tag { font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--dao) !important;
+    border: 1px solid var(--dao); border-radius: 4px; padding: 1px 5px; margin-left: 8px; vertical-align: 2px; }
+  .tokencard { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: #0a0e10; }
+  .chart { position: relative; margin-top: 10px; }
+  .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .chart .tip { position: absolute; pointer-events: none; background: #111a18; border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 10px; font-family: var(--mono); font-size: 12px; line-height: 1.5; white-space: nowrap; opacity: 0; transition: opacity .1s; z-index: 2; }
+  .chart .tip.on { opacity: 1; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend svg { width: 14px; height: 14px; }
+  table.t { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; margin-top: 8px; }
+  table.t td, table.t th { text-align: left; padding: 5px 6px; border-bottom: 1px dashed var(--line); }
+  table.t th { color: var(--dim); font-weight: 400; }
+  details summary { cursor: pointer; font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 10px; }
   .empty { padding: 30px; text-align: center; color: var(--dim); border: 1px dashed var(--line); border-radius: 8px; }
 </style>
 </head>
@@ -117,6 +132,7 @@
   <nav>
     <a href="#/" data-nav="watch">Flatline Watch</a>
     <a href="#/launch" data-nav="launch">Launch</a>
+    <a href="#/connect" data-nav="connect">Connect a coin</a>
     <a href="#/how" data-nav="how">How it works</a>
   </nav>
   <div><span class="net" id="net"></span><button id="connect">Connect wallet</button></div>
@@ -130,21 +146,27 @@ const params = new URLSearchParams(location.search);
 const NETWORK = params.get("network") || "testnet";
 // Set after the testnet deploy (scripts/demo-coins.mjs prints it); ?factory= overrides.
 const DEFAULT_FACTORY = "revive-ztw7t.revive.testnet";
+// The factory that can connect outside tokens (deploys guards). ?connect= overrides.
+const DEFAULT_CONNECT = "";
 const FACTORY_ID = params.get("factory") || DEFAULT_FACTORY;
+const CONNECT_FACTORY = params.get("connect") || DEFAULT_CONNECT;
+const FACTORIES = [...new Set([FACTORY_ID, CONNECT_FACTORY].filter(Boolean))];
 const LEGACY_COIN = params.get("contract");                 // old single-coin links
 const DEMO = params.has("demo") || (!FACTORY_ID && !LEGACY_COIN);
+const NB = NETWORK === "mainnet" ? "https://api.nearblocks.io/v3" : "https://api-testnet.nearblocks.io/v3";
 const RPCS = NETWORK === "mainnet"
   ? ["https://free.rpc.fastnear.com", "https://near.drpc.org"]
   : ["https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"];
 const EXPLORER = NETWORK === "mainnet" ? "https://nearblocks.io" : "https://testnet.nearblocks.io";
 const REPO = "https://github.com/Mhiah/Revive";
-const TGAS30 = "30000000000000", TGAS300 = "300000000000000";
+const TGAS30 = "30000000000000", TGAS100 = "100000000000000", TGAS300 = "300000000000000";
 const YOCTO_NEAR = 10n ** 24n, YOCTO_TOKEN = 10n ** 18n, DAY = 86400;
 const $ = (id) => document.getElementById(id);
+let DEC = 18;                     // decimals of the coin on screen (connected tokens vary)
 
 // ================================================================ format
-function fmtTokens(y) {
-  const n = Number(BigInt(y) / YOCTO_TOKEN);
+function fmtTokens(y, dec = DEC) {
+  const n = Number(BigInt(y) / 10n ** BigInt(dec));
   if (n >= 1e9) return (n / 1e9).toFixed(2).replace(/\.00$/, "") + "B";
   if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
@@ -167,6 +189,16 @@ function fmtWeight(w) {          // micro-tokens x seconds, shown as token-days
   if (td >= 1e6) return (td / 1e6).toFixed(1) + "M token-days";
   if (td >= 1e3) return (td / 1e3).toFixed(1) + "K token-days";
   return td.toFixed(1) + " token-days";
+}
+function parseUnits(str, dec = DEC) {           // "12.5" -> raw integer string, no float rounding
+  const s = String(str).trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) throw new Error("enter an amount like 1000 or 12.5");
+  const [w, f = ""] = s.split(".");
+  return (BigInt(w) * 10n ** BigInt(dec) + BigInt((f + "0".repeat(dec)).slice(0, dec) || "0")).toString();
+}
+function formatUnits(raw, dec = DEC) {
+  const b = BigInt(raw), d = 10n ** BigInt(dec), f = (b % d).toString().padStart(dec, "0").replace(/0+$/, "");
+  return (b / d).toString() + (f ? "." + f : "");
 }
 const short = (a) => a && a.length > 30 ? a.slice(0, 13) + "…" + a.slice(-13) : a;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -221,29 +253,94 @@ async function sendTx(receiverId, methodName, args, deposit = "0", gas = TGAS30)
 const liveRegistry = {
   async coins() {
     if (LEGACY_COIN && !FACTORY_ID) return [{ account_id: LEGACY_COIN }];
-    const n = await view(FACTORY_ID, "get_coin_count");
-    const out = [];
-    for (let i = 0; i < n; i += 100) out.push(...await view(FACTORY_ID, "get_coins", { from_index: i, limit: 100 }));
-    return out;
+    const lists = await Promise.all(FACTORIES.map(async (f) => {
+      try {
+        const n = await view(f, "get_coin_count"), out = [];
+        for (let i = 0; i < n; i += 100) out.push(...await view(f, "get_coins", { from_index: i, limit: 100 }));
+        return out;
+      } catch { return []; }
+    }));
+    return lists.flat();
   },
   async launch(name, config, deposit) { return sendTx(FACTORY_ID, "launch", { name, config }, deposit, TGAS300); },
+  async connect(name, config, deposit) { return sendTx(CONNECT_FACTORY, "connect", { name, config }, deposit, TGAS300); },
+  connectCost: async () => BigInt(await view(CONNECT_FACTORY, "get_connect_cost")),
+  async token(id) {
+    const [meta, supply, mine] = await Promise.all([view(id, "ft_metadata"), view(id, "ft_total_supply"),
+      account ? view(id, "ft_balance_of", { account_id: account }) : Promise.resolve(null)]);
+    return { meta, supply, mine };
+  },
   coin: (id) => liveCoin(id),
 };
+
+// NearBlocks has the transaction history RPC doesn't keep. Its free tier allows only a few
+// calls a minute, so each coin's history is fetched at most every 3 minutes and reused.
+const ACT = new Map();
+async function nearblocks(path) {
+  const r = await fetch(NB + path);
+  if (r.status === 429) throw new Error("NearBlocks rate limit");
+  if (!r.ok) throw new Error("NearBlocks " + r.status);
+  return (await r.json()).data || [];
+}
+const nsToS = (ns) => Number(BigInt(ns) / 1_000_000_000n);
+async function liveActivity(id, S, lore) {
+  const token = S.kind === "guard" ? S.token_id : id;
+  const hit = ACT.get(id);
+  if (hit && Date.now() - hit.at < 180_000) return withLore(hit.d, S, lore);
+  let d;
+  try {
+    const [txs, fts] = await Promise.all([nearblocks(`/accounts/${id}/txns?per_page=100`), nearblocks(`/fts/${token}/txns?per_page=100`)]);
+    const calls = txs.filter((t) => t.receiver_account_id === id && t.outcomes?.status)
+      .flatMap((t) => (t.actions || []).map((a) => ({ t: nsToS(t.block_timestamp), kind: a.method, by: t.signer_account_id })))
+      .filter((e) => e.kind === "pulse" || e.kind === "vote");
+    const transfers = fts.filter((f) => BigInt(f.delta_amount) > 0n)
+      .map((f) => ({ t: nsToS(f.block_timestamp), amount: f.delta_amount, to: f.affected_account_id, from: f.involved_account_id }));
+    const times = [...calls, ...transfers].map((x) => x.t);
+    const partial = txs.length >= 100 || fts.length >= 100;
+    d = { calls, transfers, partial, from: partial && times.length ? Math.min(...times) : null, source: "NearBlocks" };
+  } catch (e) {
+    if (hit) return withLore(hit.d, S, lore);               // keep the last good copy
+    d = { calls: [], transfers: null, partial: true, from: null, source: "lore", error: e.message };
+  }
+  ACT.set(id, { at: Date.now(), d });
+  return withLore(d, S, lore);
+}
+// Lore is on-chain and complete: it supplies births, comebacks, takeovers and revivals.
+function withLore(d, S, lore) {
+  const LK = { born: 1, lock: 1, comeback: 1, takeover: 1, revived: 1, takeover_failed: 1 };
+  const fromLore = lore.filter((l) => LK[l.kind]).map((l) => ({ t: l.at, kind: l.kind, by: l.actor }));
+  const comebacks = fromLore.filter((e) => e.kind === "comeback").map((e) => e.t);
+  const calls = d.calls.filter((e) => !(e.kind === "pulse" && comebacks.some((c) => Math.abs(c - e.t) < 5)));
+  const events = [...calls, ...fromLore];
+  if (!d.calls.length && S.last_pulse && !events.some((e) => e.t === S.last_pulse)) events.push({ t: S.last_pulse, kind: "pulse", by: S.keeper });
+  return { ...d, events: events.sort((a, b) => a.t - b.t) };
+}
+
 function liveCoin(id) {
+  let last = null;
   return {
     id,
-    status: () => view(id, "get_status"),
+    status: async () => (last = await view(id, "get_status")),
     lore: async () => { const n = await view(id, "get_lore_count"); return view(id, "get_lore", { from_index: Math.max(0, n - 100), limit: 100 }); },
     weight: (a) => view(id, "get_vote_weight", { account_id: a }),
     ballot: (a) => view(id, "get_ballot", { account_id: a }),
+    stakeOf: (a) => view(id, "get_stake", { account_id: a }),
+    wallet: (a) => view(last.token_id, "ft_balance_of", { account_id: a }),
     me: () => account,
-    call: (method, args = {}, deposit = "0") => sendTx(id, method, args, deposit),
-    async verify() {
+    call: (method, args = {}, deposit = "0", gas = TGAS30) => sendTx(id, method, args, deposit, gas),
+    // Stake and lock go through the token: ft_transfer_call to the guard with a msg.
+    send: (amount, msg) => sendTx(last.token_id, "ft_transfer_call", { receiver_id: id, amount, msg }, "1", TGAS100),
+    async activity(S) { return liveActivity(id, S, await this.lore()); },
+    async verify(S) {
       const parent = id.split(".").slice(1).join(".");
-      const [acc, keys, meta, supply, factoryHash, factoryKeys] = await Promise.all([
-        viewAccount(id), viewKeys(id), view(id, "ft_metadata"), view(id, "ft_total_supply"),
-        view(parent, "get_code_hash").catch(() => null), viewKeys(parent).catch(() => null)]);
-      return { code_hash: acc.code_hash, balance: acc.amount, keys: keys.length, meta, supply, factory: parent, factory_code_hash: factoryHash, factory_keys: factoryKeys?.length ?? null };
+      const guard = S.kind === "guard";
+      const token = guard ? S.token_id : id;
+      const [acc, keys, meta, supply, factoryHash, factoryKeys, held] = await Promise.all([
+        viewAccount(id), viewKeys(id), view(token, "ft_metadata"), view(token, "ft_total_supply"),
+        view(parent, guard ? "get_guard_code_hash" : "get_code_hash").catch(() => null), viewKeys(parent).catch(() => null),
+        guard ? view(token, "ft_balance_of", { account_id: id }) : Promise.resolve(null)]);
+      return { code_hash: acc.code_hash, balance: acc.amount, keys: keys.length, meta, supply, factory: parent, factory_code_hash: factoryHash,
+        factory_keys: factoryKeys?.length ?? null, held };
     },
   };
 }
@@ -266,9 +363,32 @@ class Mock {
     const s = this.born;
     this.holders = { "dev.testnet": { bal: T(3e8), since: s }, "alice.testnet": { bal: T(3e8), since: s },
       "bob.testnet": { bal: T(2e8), since: s }, "carol.testnet": { bal: T(1e8), since: s }, "whale.testnet": { bal: 0n, since: s } };
-    this.takeover = null; this.ballots = {}; this.loreList = [];
+    this.takeover = null; this.ballots = {}; this.loreList = []; this.calls = [];
     this.log("born", "dev.testnet", `${o.symbol} launched by dev.testnet`, this.born);
     (o.setup || (() => {}))(this);
+    this.synthHistory();
+  }
+  // Past pulses, so the activity chart has a history: on time, except before each
+  // comeback or revival, where the keeper went quiet long enough to flatline.
+  synthHistory() {
+    const iv = this.cfg.pulse_interval_secs, rnd = seeded(this.id);
+    const gaps = this.loreList.filter((l) => l.kind === "comeback" || l.kind === "revived").map((l) => [l.at - iv * 1.4, l.at]);
+    for (let t = this.born + iv * (0.3 + rnd() * 0.3); t < this.lastPulse - 60; t += iv * (0.45 + rnd() * 0.4)) {
+      if (!gaps.some(([a, b]) => t > a && t < b)) this.calls.push({ t: Math.round(t), kind: "pulse", by: "dev.testnet" });
+    }
+    this.calls.push({ t: this.lastPulse, kind: "pulse", by: this.keeper });
+  }
+  async activity(S) {
+    const rnd = seeded(this.id + "tx"), span = this.t - this.born, step = Math.max(1800, Math.ceil(span / 1200));
+    const transfers = [];
+    for (let t = this.born, i = 0; t < this.t; t += step, i++) {
+      const age = (t - this.born) / DAY, deadNow = t > this.flatlineAt();
+      const rate = (4 * Math.exp(-age / 6) + 0.6) * (deadNow ? 0.35 : 1) * step / 3600 / 2;
+      const n = Math.floor(rnd() * rate * 2 + (rnd() < rate % 1 ? 1 : 0));
+      for (let k = 0; k < n; k++) transfers.push({ t: t + Math.floor(rnd() * step), amount: T(Math.round(1e5 + rnd() ** 3 * 3e7)).toString() });
+    }
+    const d = { calls: this.calls.filter((c) => c.t <= this.t), transfers, partial: false, from: null, source: "simulator" };
+    return withLore(d, S, this.loreList);
   }
   log(kind, actor, note, at = this.t) { this.loreList.push({ at, kind, actor, note }); }
   flatlineAt() { return this.lastPulse + this.cfg.pulse_interval_secs; }
@@ -289,6 +409,7 @@ class Mock {
       this.log("comeback", by, `came back ${fmtDur(this.t - this.flatlineAt())} late and paid ${fmtNear(deposit)}` + (c ? `; takeover #${c.id} cancelled` : ""));
     }
     this.treasury += deposit; this.lastPulse = this.t;
+    if (!this.calls.some((c) => c.t === this.t)) this.calls.push({ t: this.t, kind: "pulse", by });
   }
   startTakeover(by, steward) {
     if (this.takeover) this.fail("a takeover vote is already open");
@@ -312,6 +433,7 @@ class Mock {
     const wt = this.w(by, tk.flatline_at); if (wt === 0n) this.fail("no voting weight: only tokens held before the flatline count");
     tk[support ? "yes" : "no"] = (BigInt(tk[support ? "yes" : "no"]) + wt).toString(); tk.voters++;
     this.ballots[tk.id + by] = { support, weight: wt.toString() };
+    this.calls.push({ t: this.t, kind: "vote", by });
   }
   finalize() {
     const tk = this.takeover; if (!tk) this.fail("no takeover vote is open");
@@ -328,7 +450,7 @@ class Mock {
   // source interface
   async status() {
     const circ = Object.values(this.holders).reduce((s, h) => s + h.bal, 0n);
-    return { status: this.st(), now: this.t, keeper: this.keeper, creator: this.creator, lives: this.lives, last_pulse: this.lastPulse,
+    return { kind: "coin", status: this.st(), now: this.t, keeper: this.keeper, creator: this.creator, lives: this.lives, launched_at: this.born, last_pulse: this.lastPulse,
       flatline_at: this.flatlineAt(), total_supply: this.supply.toString(), circulating: circ.toString(), treasury: this.treasury.toString(),
       dev_locked: this.devLocked.toString(), dev_burned: this.devBurned.toString(), takeover: this.takeover && { ...this.takeover },
       takeover_count: this.count, config: this.cfg, links: REPO };
@@ -345,10 +467,64 @@ class Mock {
     if (method === "finalize_takeover") { const ok = this.finalize(); if (ok) revivedFx(); return ok; }
     this.fail("not in the demo: " + method);
   }
-  async verify() {
+  async verify(S) {
     const circ = Object.values(this.holders).reduce((s, h) => s + h.bal, 0n);
     return { code_hash: FAKE_HASH, balance: (this.treasury + 15n * YOCTO_NEAR / 10n).toString(), keys: 0, supply: this.supply.toString(),
       meta: { spec: "ft-1.0.0", decimals: 18 }, factory: "revive.testnet", factory_code_hash: FAKE_HASH, factory_keys: 0, circ };
+  }
+}
+
+function seeded(str) {                       // small deterministic RNG (mulberry32)
+  let a = [...str].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 2654435761) >>> 0, 1779033703);
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+// A token launched somewhere else, connected to Revive. The guard holds the creator's
+// locked bag and holders' staked tokens; only stake counts for the vote.
+class GuardMock extends Mock {
+  reset() {
+    super.reset();
+    this.token = this.o.token;
+    this.wallets = { "dev.testnet": T(2e8), "alice.testnet": T(1e8), "bob.testnet": 0n, "carol.testnet": T(5e7), "whale.testnet": 0n };
+    delete this.holders["dev.testnet"];
+    this.holders["alice.testnet"].bal = T(2e8); this.holders["carol.testnet"].bal = T(5e7);
+    this.log("lock", "dev.testnet", "creator locked 100M $" + this.cfg.symbol, this.born + 600);
+  }
+  buy(a, n) { const amt = T(n); this.wallets["dev.testnet"] -= amt; this.wallets[a] = (this.wallets[a] || 0n) + amt; }
+  stake(by, amount) {
+    const amt = BigInt(amount);
+    if (by === this.keeper || by === this.creator) this.fail("the keeper and creator cannot stake");
+    if ((this.wallets[by] || 0n) < amt) this.fail("not enough $" + this.cfg.symbol + " in your wallet");
+    const h = this.holders[by] || (this.holders[by] = { bal: 0n, since: this.t }), nb = h.bal + amt;
+    h.since = Number((h.bal * BigInt(h.since) + amt * BigInt(this.t) + nb - 1n) / nb); h.bal = nb; this.wallets[by] -= amt;
+  }
+  unstake(by, amount) {
+    const amt = BigInt(amount), h = this.holders[by];
+    if (!h || h.bal < amt) this.fail("you have less than that staked");
+    h.bal -= amt; this.wallets[by] = (this.wallets[by] || 0n) + amt;
+  }
+  lock(by, amount) {
+    if (by !== this.creator || !this.devActive) this.fail("only the living creator can lock a bag");
+    const amt = BigInt(amount); if (this.wallets[by] < amt) this.fail("not enough $" + this.cfg.symbol + " in your wallet");
+    this.wallets[by] -= amt; this.devLocked += amt; this.log("lock", by, `creator locked ${fmtTokens(amt)} $${this.cfg.symbol}`);
+  }
+  async status() {
+    const s = await super.status(), staked = Object.values(this.holders).reduce((n, h) => n + h.bal, 0n);
+    delete s.total_supply; delete s.circulating;
+    return { ...s, kind: "guard", token_id: this.token, staked: staked.toString(), stakers: Object.values(this.holders).filter((h) => h.bal > 0n).length,
+      dev_claimed: "0", config: { ...this.cfg, token_id: this.token, decimals: 18 } };
+  }
+  async stakeOf(a) { return (this.holders[a]?.bal || 0n).toString(); }
+  async wallet(a) { return (this.wallets[a] || 0n).toString(); }
+  async send(amount, msg) { const by = this.me(); if (msg === "lock") return this.lock(by, amount); if (msg === "stake") return this.stake(by, amount); this.fail("the guard only accepts lock or stake"); }
+  async call(method, args = {}, deposit = "0") {
+    if (method === "unstake") return this.unstake(this.me(), args.amount);
+    return super.call(method, args, deposit);
+  }
+  async verify(S) {
+    return { code_hash: FAKE_HASH, balance: (this.treasury + 15n * YOCTO_NEAR / 10n).toString(), keys: 0, supply: T(1e9).toString(),
+      meta: { spec: "ft-1.0.0", decimals: 18, name: this.cfg.name, symbol: this.cfg.symbol }, factory: "revive.testnet", factory_code_hash: FAKE_HASH, factory_keys: 0,
+      held: (BigInt(S.staked) + BigInt(S.dev_locked) + BigInt(S.dev_burned)).toString() };
   }
 }
 
@@ -364,9 +540,25 @@ const MOCKS = [
     setup: (m) => { m.keeper = "phoenix-two.sputnikv2.testnet"; m.lives = 2; m.devActive = false; m.devBurned = m.devLocked; m.supply -= m.devLocked; m.devLocked = 0n;
       m.log("revived", "phoenix-one.sputnikv2.testnet", "life #1: keeper dev.testnet replaced by phoenix-one.sputnikv2.testnet; 100M creator tokens burned", m.t - 40 * DAY);
       m.log("revived", "phoenix-two.sputnikv2.testnet", "life #2: keeper phoenix-one.sputnikv2.testnet replaced by phoenix-two.sputnikv2.testnet; 0 creator tokens burned", m.t - 9 * DAY); } }),
+  new GuardMock({ id: "meme.revive.testnet", token: "meme.cooking.testnet", name: "Meme Cooked", symbol: "MEME", age: 7 * DAY, sincePulse: 2 * DAY + 20 * 3600 }),
 ];
 const demoRegistry = {
-  async coins() { return MOCKS.map((m) => ({ account_id: m.id, name: m.cfg.name, symbol: m.cfg.symbol, creator: m.creator })); },
+  async coins() { return MOCKS.map((m) => ({ account_id: m.id, name: m.cfg.name, symbol: m.cfg.symbol, creator: m.creator,
+    kind: m instanceof GuardMock ? "guard" : "coin", token_id: m.token || null })); },
+  async connect(name, config) {
+    const id = `${name}.revive.testnet`;
+    if (MOCKS.some((m) => m.id === id)) throw new Error("a coin with that name already exists");
+    const t = DEMO_TOKENS[config.token_id];
+    const m = new GuardMock({ id, token: config.token_id, name: t.meta.name, symbol: t.meta.symbol, interval: config.pulse_interval_secs });
+    m.devLocked = 0n; m.loreList = m.loreList.filter((l) => l.kind !== "lock"); m.holders = {};
+    m.wallets = { "dev.testnet": T(4e8), "alice.testnet": T(3e8), "bob.testnet": T(2e8), "carol.testnet": T(1e8), "whale.testnet": 0n }; MOCKS.push(m); ACTOR.value = "dev.testnet"; return id;
+  },
+  connectCost: async () => 22n * YOCTO_NEAR / 10n,
+  async token(id) {
+    const t = DEMO_TOKENS[id];
+    if (!t) throw new Error(`${id} isn't a token on this network (in the simulator, try pepe.cooking.testnet)`);
+    return { ...t, mine: ACTOR.value === "dev.testnet" ? t.supply : "0" };
+  },
   async launch(name, config) {
     const id = `${name}.revive.testnet`;
     if (MOCKS.some((m) => m.id === id)) throw new Error("a coin with that name already exists");
@@ -375,12 +567,16 @@ const demoRegistry = {
   },
   coin: (id) => MOCKS.find((m) => m.id === id),
 };
+const DEMO_TOKENS = {
+  "pepe.cooking.testnet": { meta: { spec: "ft-1.0.0", name: "Pepe Cooked", symbol: "PEPEC", decimals: 18 }, supply: T(1e9).toString() },
+  "meme.cooking.testnet": { meta: { spec: "ft-1.0.0", name: "Meme Cooked", symbol: "MEME", decimals: 18 }, supply: T(1e9).toString() },
+};
 const REG = DEMO ? demoRegistry : liveRegistry;
 
 // ================================================================= views
 const COLORS = { alive: "--alive", flatlined: "--dead", voting: "--vote", vote_closed: "--vote" };
 const LABEL = { alive: "ALIVE", flatlined: "FLATLINED", voting: "TAKEOVER VOTE", vote_closed: "VOTE CLOSED" };
-const LORE_C = { born: "--alive", comeback: "--vote", flatline: "--dead", takeover: "--vote", takeover_failed: "--dead", revived: "--alive", spend: "--dao", links: "--dao" };
+const LORE_C = { lock: "--dao", born: "--alive", comeback: "--vote", flatline: "--dead", takeover: "--vote", takeover_failed: "--dead", revived: "--alive", spend: "--dao", links: "--dao" };
 const SPUTNIK = [".sputnikv2.testnet", ".sputnik-dao.near"];
 const isSputnik = (a) => SPUTNIK.some((x) => a.endsWith(x));
 const isDao = (a, s) => a.endsWith(s.config.dao_suffix);
@@ -402,7 +598,8 @@ async function render() {
   $("connect").textContent = DEMO ? "Demo mode" : (account ? short(account) : "Connect wallet");
   $("connect").disabled = DEMO;
   try {
-    const html = r.page === "coin" ? await coinView(r) : r.page === "launch" ? await launchView() : r.page === "how" ? howView() : await watchView();
+    const html = r.page === "coin" ? await coinView(r) : r.page === "launch" ? await launchView() : r.page === "connect" ? await connectView()
+      : r.page === "how" ? howView() : await watchView();
     if (my !== renderId) return;
     $("view").innerHTML = html;
     bind(r);
@@ -431,7 +628,7 @@ async function watchView() {
     const dl = s.status === "alive" ? `pulse due in ${fmtDur(s.flatline_at - s.now)}` : s.takeover ? (s.status === "vote_closed" ? "vote closed — finalize" : `vote ends in ${fmtDur(s.takeover.ends_at - s.now)}`) : `dead for ${fmtDur(s.now - s.flatline_at)} — take it over`;
     return `<a class="coinrow" href="#/coin/${encodeURIComponent(c.account_id)}" style="--c:var(${COLORS[s.status]})">
       <span class="dot ${s.status === "alive" ? "beat" : ""}"></span>
-      <span><b>${esc(s.config.name)}</b><small>$${esc(s.config.symbol)}</small></span>
+      <span><b>${esc(s.config.name)}</b><small>$${esc(s.config.symbol)}</small>${s.kind === "guard" ? `<small class="tag">connected</small>` : ""}</span>
       <span class="chip">${LABEL[s.status]}</span>
       <span class="mono hide-sm">${dl}</span>
       <span class="mono hide-sm lives" title="lives">${s.lives ? "♥".repeat(Math.min(s.lives, 9)) : "—"}</span></a>`;
@@ -445,7 +642,8 @@ async function watchView() {
         A passed vote burns the creator's locked allocation, hands over the treasury and metadata, and increments the coin's lives.</p>
       <p style="margin-top:12px">${DEMO
         ? `You're in the simulator. <a href="./">See the live coins on NEAR testnet</a>.`
-        : `Live on NEAR testnet. No wallet? <a href="?demo">Play the full story in the simulator</a>.`}</p>
+        : `Live on NEAR testnet. No wallet? <a href="?demo">Play the full story in the simulator</a>.`}
+        Coin already launched somewhere else? <a href="#/connect">Connect it</a>.</p>
       <div class="stats">
         <div class="stat"><div class="label">Coins</div><div class="v">${live.length}</div></div>
         <div class="stat"><div class="label">Flatlined now</div><div class="v" style="color:var(--dead)">${dead}</div></div>
@@ -511,6 +709,72 @@ function readLaunch(form) {
   return { name: f.name.trim(), config, deposit };
 }
 
+// ----------------------------------------------------------------- Connect
+// Guard mode: the token stays where it is. Revive deploys a guard next to it that holds
+// the creator's locked bag and holders' stake, and runs the same heartbeat and takeover.
+let CONNECT_COST = 22n * YOCTO_NEAR / 10n;
+const CONNECT = { token: "", info: null, err: "" };
+async function connectView() {
+  setAccent("alive");
+  if (!DEMO && !CONNECT_FACTORY) return `
+    <section class="panel full"><div class="label">Connect a coin</div>
+      <p class="hint">Connecting tokens launched elsewhere needs the new factory, which isn't on testnet yet.
+        You can try the whole flow in the <a href="?demo#/connect">simulator</a>.</p></section>`;
+  CONNECT_COST = await REG.connectCost();
+  const t = CONNECT.info, already = t ? (await REG.coins()).find((c) => c.token_id === CONNECT.token) : null;
+  const sym = t ? esc(t.meta.symbol) : "TOKEN";
+  return `
+    <section class="panel full">
+      <div class="label">Connect a coin launched outside Revive</div>
+      <p class="hint">Any NEP-141 token works: meme.cooking, a launchpad, or your own contract. The token doesn't change.
+        Revive deploys a guard for it at <b>&lt;name&gt;.${esc(CONNECT_FACTORY || "revive.testnet")}</b>. You lock your bag in the guard,
+        holders stake there, and the same rules apply: pulse or flatline, and only stake from before the flatline votes.
+        If holders take over, your locked bag is sealed in the guard forever.</p>
+      <div class="stack">
+        <label class="f"><span>Token contract</span><input id="c-token" placeholder="${DEMO ? "pepe.cooking.testnet" : "yourtoken.testnet"}" value="${esc(CONNECT.token)}"></label>
+        <div class="actions" style="margin-top:0"><button id="b-check">Check token</button></div>
+        ${CONNECT.err ? `<p class="hint" style="color:var(--dead)">${esc(CONNECT.err)}</p>` : ""}
+        ${t ? `<div class="tokencard">
+          <div class="row"><span>Token</span><b>${esc(t.meta.name)} · $${sym}</b></div>
+          <div class="row"><span>Standard</span><b>${esc(t.meta.spec || "ft")} · ${t.meta.decimals} decimals</b></div>
+          <div class="row"><span>Total supply</span><b>${fmtTokens(t.supply, t.meta.decimals)}</b></div>
+          <div class="row"><span>Your balance</span><b>${t.mine === null ? "connect a wallet" : fmtTokens(t.mine, t.meta.decimals)}</b></div>
+          ${already ? `<div class="row"><span>Already connected</span><b><a href="#/coin/${encodeURIComponent(already.account_id)}">${esc(already.account_id)}</a></b></div>` : ""}
+        </div>` : ""}
+      </div>
+      ${t && !already ? `<form id="connectf" class="stack" style="margin-top:18px">
+        <div class="grid2">
+          <label class="f"><span>Guard name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" value="${esc(t.meta.symbol.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}"></label>
+          <label class="f"><span>Pulse every (hours)</span><input name="pulse" type="number" min="0.02" step="0.01" value="72"></label>
+          <label class="f"><span>Takeover vote length (hours)</span><input name="vote" type="number" min="0.02" step="0.01" value="24"></label>
+          <label class="f"><span>Quorum (% of eligible stake)</span><input name="quorum" type="number" min="1" max="100" value="20"></label>
+          <label class="f"><span>Your bag vests over (days)</span><input name="vest" type="number" min="0" value="180"></label>
+          <label class="f"><span>Comeback penalty (NEAR)</span><input name="penalty" type="number" min="0" step="0.1" value="2"></label>
+          <label class="f"><span>Treasury spend cap per week (NEAR)</span><input name="cap" type="number" min="0" step="0.1" value="1"></label>
+          <label class="f"><span>Seed the treasury with (NEAR)</span><input name="seed" type="number" min="0" step="0.1" value="1"></label>
+        </div>
+        <label class="f"><span>Links (website, X, Telegram)</span><input name="links" placeholder="https://x.com/yourcoin"></label>
+        <div class="actions"><button class="primary" type="submit">Connect $${sym}</button><span class="hint" id="ccost"></span></div>
+        <p class="hint">Next, on the coin's page: lock your bag (you become creator and first keeper) and tell holders to stake.</p>
+      </form>` : ""}
+    </section>`;
+}
+function readConnect(form) {
+  const f = Object.fromEntries(new FormData(form));
+  const near = (x) => (BigInt(Math.round(Number(x) * 1e6)) * YOCTO_NEAR / 1_000_000n).toString();
+  const config = {
+    token_id: CONNECT.token, links: f.links.trim() || null,
+    pulse_interval_secs: Math.max(60, Math.round(Number(f.pulse) * 3600)),
+    vote_duration_secs: Math.max(60, Math.round(Number(f.vote) * 3600)),
+    quorum_bps: Math.round(Number(f.quorum) * 100),
+    vest_duration_secs: Math.round(Number(f.vest) * DAY),
+    spend_cap: near(f.cap), spend_period_secs: 7 * DAY,
+    comeback_penalty: near(f.penalty),
+    dao_suffix: NETWORK === "mainnet" ? ".sputnik-dao.near" : ".sputnikv2.testnet",
+  };
+  return { name: f.name.trim(), config, deposit: (BigInt(near(f.seed)) + CONNECT_COST).toString() };
+}
+
 // ------------------------------------------------------------------- How
 function howView() {
   setAccent("alive");
@@ -536,16 +800,19 @@ async function coinView(r) {
   if (!src) throw new Error("unknown coin " + r.id);
   const S = await src.status();
   window.__S = S;
+  DEC = S.config.decimals ?? 18;
+  const guard = S.kind === "guard";
   setAccent(S.status);
   const dead = S.now > S.flatline_at;
-  const tabs = ["monitor", "verify", "lore"].map((t) =>
+  const tabs = ["monitor", "activity", "verify", "lore"].map((t) =>
     `<a href="#/coin/${encodeURIComponent(r.id)}/${t}" class="${r.tab === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</a>`).join("");
   const head = `
     <section class="panel full monitor">
       <div class="flash" id="flash"></div>
       <div class="monitor-top">
-        <div><div class="label">Patient · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a></div>
-          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small></div></div>
+        <div><div class="label">${guard ? "Guard" : "Patient"} · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a>${guard
+            ? ` · token <a href="${EXPLORER}/token/${esc(S.token_id)}" target="_blank" rel="noopener">${esc(short(S.token_id))}</a>` : ""}</div>
+          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small>${guard ? `<small class="tag">connected</small>` : ""}</div></div>
         <div style="text-align:right"><div class="label">Status</div>
           <div class="status ${S.status === "flatlined" ? "blink" : ""}">${LABEL[S.status]}</div></div>
       </div>
@@ -554,13 +821,16 @@ async function coinView(r) {
         <div class="readout"><div class="label">${dead ? "Flatlined for" : "Next pulse due in"}</div><div class="v" id="deadline">${fmtDur(dead ? S.now - S.flatline_at : S.flatline_at - S.now)}</div></div>
         <div class="readout"><div class="label">Lives</div><div class="v lives">${S.lives ? "♥".repeat(Math.min(S.lives, 9)) + (S.lives > 9 ? ` ×${S.lives}` : "") : "0"}</div></div>
         <div class="readout"><div class="label">Treasury</div><div class="v">${fmtNear(S.treasury)}</div></div>
-        <div class="readout"><div class="label">Supply</div><div class="v">${fmtTokens(S.total_supply)}</div></div>
+        ${guard ? `<div class="readout"><div class="label">Staked · ${S.stakers} holders</div><div class="v">${fmtTokens(S.staked)}</div></div>`
+          : `<div class="readout"><div class="label">Supply</div><div class="v">${fmtTokens(S.total_supply)}</div></div>`}
       </div>
       <div class="tabs">${tabs}</div>
     </section>`;
   if (r.tab === "verify") return head + await verifyPanel(src, S);
+  if (r.tab === "activity") return head + await activityPanel(src, S);
   if (r.tab === "lore") return head + await lorePanel(src, true);
-  return head + await takeoverPanel(src, S) + keeperPanel(src, S) + await lorePanel(src, false) + directorPanel(r.id);
+  return head + await takeoverPanel(src, S) + await keeperPanel(src, S) + (guard ? await stakePanel(src, S) : "") + await lorePanel(src, false)
+    + await activityPanel(src, S) + directorPanel(r.id);
 }
 
 async function takeoverPanel(src, S) {
@@ -568,7 +838,7 @@ async function takeoverPanel(src, S) {
   const weight = me ? BigInt(await src.weight(me)) : 0n;
   let body;
   if (!tk && S.status !== "flatlined") {
-    body = `<p class="hint">No takeover. The keeper still has a pulse, so holders can't take over.</p>
+    body = `<p class="hint">No takeover. The keeper still has a pulse, so holders can't take over.${S.kind === "guard" ? " Only staked tokens get a vote, so stake before anything goes wrong." : ""}</p>
       <div class="row"><span>Your vote weight if it flatlines</span><b>${me ? fmtWeight(weight) : "connect a wallet"}</b></div>`;
   } else if (!tk) {
     body = `<p class="hint">The keeper missed the deadline. Any holder from before the flatline can nominate a Sputnik DAO as the new keeper.</p>
@@ -591,22 +861,172 @@ async function takeoverPanel(src, S) {
       <div class="actions">${closed ? `<button class="primary" id="b-final">Finalize</button>` :
         ballot ? `<span class="hint">You voted ${ballot.support ? "YES" : "NO"}.</span>` :
         !me ? `<span class="hint">Connect a wallet to vote.</span>` :
-        weight === 0n ? `<span class="hint" style="color:var(--dead)">No vote: you held nothing before the flatline. Tokens bought after the death don't count.</span>` :
+        weight === 0n ? `<span class="hint" style="color:var(--dead)">${S.kind === "guard"
+          ? "No vote: you had nothing staked before the flatline. Stake added after the death doesn't count."
+          : "No vote: you held nothing before the flatline. Tokens bought after the death don't count."}</span>` :
         `<button class="primary" id="b-yes">Vote yes, revive</button><button id="b-no">Vote no</button>`}</div>`;
   }
   return `<section class="panel"><div class="label">Takeover</div>${body}</section>`;
 }
 
-function keeperPanel(src, S) {
-  const me = src.me(), isKeeper = me === S.keeper, dead = S.now > S.flatline_at;
+async function keeperPanel(src, S) {
+  const me = src.me(), isKeeper = me === S.keeper, dead = S.now > S.flatline_at, guard = S.kind === "guard";
+  const canLock = guard && me && me === S.creator && S.keeper === S.creator;
+  const wallet = canLock ? BigInt(await src.wallet(me)) : 0n;
   return `<section class="panel"><div class="label">Keeper</div>
     <div class="row"><span>Keeper</span><b style="color:${isDao(S.keeper, S) ? "var(--dao)" : "inherit"}">${esc(S.keeper)}</b></div>
     <div class="row"><span>Creator</span><b>${esc(S.creator)}</b></div>
-    <div class="row"><span>Creator tokens locked</span><b>${fmtTokens(S.dev_locked)}</b></div>
-    <div class="row"><span>Creator tokens burned</span><b style="color:${BigInt(S.dev_burned) > 0n ? "var(--dead)" : "inherit"}">${fmtTokens(S.dev_burned)}</b></div>
+    <div class="row"><span>${guard ? "Creator bag locked" : "Creator tokens locked"}</span><b>${fmtTokens(S.dev_locked)}</b></div>
+    <div class="row"><span>${guard ? "Creator bag sealed" : "Creator tokens burned"}</span><b style="color:${BigInt(S.dev_burned) > 0n ? "var(--dead)" : "inherit"}">${fmtTokens(S.dev_burned)}</b></div>
     <div class="row"><span>Comeback penalty</span><b>${fmtNear(S.config.comeback_penalty)}</b></div>
     <div class="actions">${isKeeper ? `<button class="primary" id="b-pulse" data-late="${dead ? 1 : ""}">${dead ? "Come back (pay penalty)" : "Pulse ♥"}</button>` : `<span class="hint">Only the keeper can pulse.</span>`}</div>
+    ${canLock ? `<div class="stack"><div class="label">Lock your bag · wallet ${fmtTokens(wallet)} $${esc(S.config.symbol)}</div>
+      <input id="lock-amt" inputmode="decimal" placeholder="amount of $${esc(S.config.symbol)}">
+      <button id="b-lock">Lock in the guard</button>
+      <span class="hint">Locked tokens vest to you while you keep pulsing. If holders take over, what's left is sealed forever.</span></div>` : ""}
   </section>`;
+}
+
+async function stakePanel(src, S) {
+  const me = src.me(), sym = esc(S.config.symbol);
+  const barred = me && (me === S.keeper || me === S.creator);
+  const [wallet, staked] = me ? (await Promise.all([src.wallet(me), src.stakeOf(me)])).map(BigInt) : [0n, 0n];
+  return `<section class="panel"><div class="label">Stake — only staked $${sym} votes</div>
+    <p class="hint">Your vote weight is your stake times how long it was staked before the flatline. Unstaking is always open.</p>
+    <div class="row"><span>In your wallet</span><b>${me ? fmtTokens(wallet) + " $" + sym : "connect a wallet"}</b></div>
+    <div class="row"><span>Staked</span><b>${me ? fmtTokens(staked) + " $" + sym : "—"}</b></div>
+    ${!me ? "" : barred ? `<p class="hint">The keeper and creator can't stake.</p>` : `<div class="stack">
+      <input id="stake-amt" inputmode="decimal" placeholder="amount of $${sym}">
+      <div class="actions" style="margin-top:0"><button class="primary" id="b-stake" ${wallet ? "" : "disabled"}>Stake</button>
+        <button id="b-unstake" ${staked ? "" : "disabled"}>Unstake</button>
+        <button id="b-max" data-w="${wallet}" data-s="${staked}">Max</button></div></div>`}
+  </section>`;
+}
+
+// --------------------------------------------------------------- Activity
+// One time axis: token transfers per bucket (bars), every pulse/vote/takeover/revival
+// (marks above), and the stretches with no pulse shaded as flatlined.
+const EV = {
+  pulse: { c: "--alive", label: "pulse", shape: "dot" },
+  vote: { c: "--vote", label: "vote", shape: "small" },
+  takeover: { c: "--vote", label: "takeover opened", shape: "tri" },
+  comeback: { c: "--vote", label: "comeback (penalty)", shape: "dia" },
+  revived: { c: "--alive", label: "revived", shape: "heart" },
+  takeover_failed: { c: "--dead", label: "takeover failed", shape: "x" },
+  born: { c: "--alive", label: "launched", shape: "sq" },
+  lock: { c: "--dao", label: "bag locked", shape: "sq" },
+};
+function mark(shape, x, y, c) {
+  const ring = `stroke="var(--panel)" stroke-width="2"`;
+  if (shape === "dot") return `<circle cx="${x}" cy="${y}" r="4" fill="var(${c})" ${ring}/>`;
+  if (shape === "small") return `<circle cx="${x}" cy="${y}" r="3.2" fill="var(${c})" ${ring}/>`;
+  if (shape === "sq") return `<rect x="${x - 4}" y="${y - 4}" width="8" height="8" rx="1.5" fill="var(${c})" ${ring}/>`;
+  if (shape === "dia") return `<path d="M${x} ${y - 5.5}L${x + 5.5} ${y}L${x} ${y + 5.5}L${x - 5.5} ${y}Z" fill="var(${c})" ${ring}/>`;
+  if (shape === "tri") return `<path d="M${x} ${y - 6}L${x + 6} ${y + 4.5}L${x - 6} ${y + 4.5}Z" fill="var(${c})" ${ring}/>`;
+  if (shape === "x") return `<path d="M${x - 4} ${y - 4}L${x + 4} ${y + 4}M${x + 4} ${y - 4}L${x - 4} ${y + 4}" stroke="var(${c})" stroke-width="2.4" stroke-linecap="round"/>`;
+  return `<path d="M${x} ${y + 6}C${x - 9} ${y - 1} ${x - 4} ${y - 8} ${x} ${y - 3}C${x + 4} ${y - 8} ${x + 9} ${y - 1} ${x} ${y + 6}Z" fill="var(${c})" ${ring}/>`;
+}
+const legendKey = (shape, c) => `<svg viewBox="-7 -7 14 14">${mark(shape, 0, 0, c)}</svg>`;
+function fmtWhen(t, span) {
+  const d = new Date(t * 1000), iso = d.toISOString();
+  return span > 2 * DAY ? d.toUTCString().slice(5, 11) : iso.slice(11, 16);
+}
+// Flatlined stretches: after each sign of life (launch, pulse, comeback, revival) the keeper has
+// one interval; past that with nothing new, the coin was dead until the next sign of life.
+function deadZones(events, S, t0, t1, knownFrom) {
+  const iv = S.config.pulse_interval_secs;
+  const life = events.filter((e) => e.kind === "pulse" || e.kind === "comeback" || e.kind === "revived" || e.kind === "born").map((e) => e.t);
+  if (S.launched_at && S.launched_at >= knownFrom) life.push(S.launched_at);
+  const a = [...new Set(life)].filter((t) => t >= knownFrom).sort((x, y) => x - y), out = [];
+  for (let i = 0; i < a.length; i++) {
+    const dl = a[i] + iv, end = i + 1 < a.length ? a[i + 1] : t1;
+    if (end > dl) out.push([Math.max(dl, t0), Math.min(end, t1)]);
+  }
+  if (!a.length && S.now > S.flatline_at) out.push([Math.max(S.flatline_at, t0), t1]);
+  return out.filter(([x, y]) => y > x);
+}
+async function activityPanel(src, S) {
+  let A;
+  try { A = await src.activity(S); } catch (e) { return `<section class="panel full"><div class="label">Activity</div><p class="hint">Couldn't load history: ${esc(e.message)}</p></section>`; }
+  const sym = esc(S.config.symbol), t1 = S.now;
+  const known = A.transfers !== null && !A.partial;
+  let t0 = A.from ?? Math.min(S.launched_at || t1, ...A.events.map((e) => e.t));
+  if (t1 - t0 < 600) t0 = t1 - 600;
+  const narrow = innerWidth < 600;                  // phones get fewer, wider buckets and readable text
+  const span = t1 - t0, N = narrow ? 20 : 40, bw = span / N;
+  const tr = A.transfers || [];
+  const buckets = Array.from({ length: N }, (_, i) => ({ a: t0 + i * bw, b: t0 + (i + 1) * bw, n: 0, vol: 0n, ev: {} }));
+  const bi = (t) => Math.min(N - 1, Math.max(0, Math.floor((t - t0) / bw)));
+  for (const x of tr) if (x.t >= t0) { const b = buckets[bi(x.t)]; b.n++; b.vol += BigInt(x.amount); }
+  const evs = A.events.filter((e) => e.t >= t0 && EV[e.kind]);
+  for (const e of evs) { const b = buckets[bi(e.t)]; b.ev[e.kind] = (b.ev[e.kind] || 0) + 1; }
+  // Without the indexer, on-time pulses are unknown, so only the current death is drawn.
+  const zones = A.source === "lore" ? (S.now > S.flatline_at ? [[Math.max(S.flatline_at, t0), t1]] : []) : deadZones(evs, S, t0, t1, A.from ?? 0);
+  const W = narrow ? 360 : 720, H = narrow ? 230 : 236, L = narrow ? 30 : 40, R = W - 8, top = 46, base = 196;
+  const X = (t) => L + (t - t0) / span * (R - L);
+  const max = Math.max(1, ...buckets.map((b) => b.n));
+  const step = max <= 4 ? 1 : max <= 10 ? 2 : max <= 25 ? 5 : max <= 50 ? 10 : Math.ceil(max / 5 / 10) * 10;
+  const ymax = Math.ceil(max / step) * step, Y = (v) => base - v / ymax * (base - top);
+  const slot = (R - L) / N, barW = Math.min(14, slot - 2);
+  let g = "";
+  for (let v = 0; v <= ymax; v += step) g += `<line x1="${L}" x2="${R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/>
+    <text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end" fill="var(--dim)" font-size="11">${v}</text>`;
+  const zoneSvg = zones.map(([a, b]) => `<rect x="${X(a)}" y="${top - 8}" width="${Math.max(1.5, X(b) - X(a))}" height="${base - top + 8}" fill="var(--dead)" opacity=".1"/>
+    <line x1="${X(a)}" x2="${X(b)}" y1="${top - 8}" y2="${top - 8}" stroke="var(--dead)" stroke-width="2"/>`).join("");
+  const bars = known || tr.length ? buckets.map((b, i) => {
+    if (!b.n) return "";
+    const x = L + i * slot + (slot - barW) / 2, y = Y(b.n), h = base - y, r = Math.min(4, h, barW / 2);
+    return `<path d="M${x} ${base}V${y + r}Q${x} ${y} ${x + r} ${y}H${x + barW - r}Q${x + barW} ${y} ${x + barW} ${y + r}V${base}Z" fill="var(--dao)" opacity=".8"/>`;
+  }).join("") : "";
+  // Event lane: one row of marks above the plot; repeated events in a bucket spread a little.
+  const lane = 18, seen = {};
+  const marks = evs.map((e) => {
+    const k = bi(e.t) + ":" + (EV[e.kind].shape === "small" ? "v" : "m"); seen[k] = (seen[k] || 0) + 1;
+    const small = EV[e.kind].shape === "small", dy = small ? 13 : 0, dx = Math.min(seen[k] - 1, 3) * (small ? 8 : 5);
+    return mark(EV[e.kind].shape, Math.round((X(e.t) + dx) * 10) / 10, lane + dy, EV[e.kind].c);
+  }).join("");
+  let ticks = "";
+  const nt = narrow ? 2 : 4;
+  for (let i = 0; i <= nt; i++) { const t = t0 + span * i / nt; ticks += `<text x="${X(t)}" y="${base + 20}" text-anchor="${i === 0 ? "start" : i === nt ? "end" : "middle"}" fill="var(--dim)" font-size="11">${i === nt ? "now" : fmtWhen(t, span)}</text>`; }
+  const hits = buckets.map((b, i) => `<rect class="hit" data-i="${i}" x="${L + i * slot}" y="0" width="${slot}" height="${base}" fill="transparent"/>`).join("");
+  const kinds = [...new Set(evs.map((e) => e.kind))];
+  const legend = `<div class="legend">
+    ${known || tr.length ? `<span><svg viewBox="0 0 14 14"><rect x="3" y="2" width="8" height="12" rx="2" fill="var(--dao)" opacity=".8"/></svg>$${sym} transfers</span>` : ""}
+    <span><svg viewBox="0 0 14 14"><rect x="0" y="2" width="14" height="12" fill="var(--dead)" opacity=".18"/><line x1="0" x2="14" y1="2" y2="2" stroke="var(--dead)" stroke-width="2"/></svg>flatlined (no pulse)</span>
+    ${kinds.map((k) => `<span>${legendKey(EV[k].shape, EV[k].c)}${EV[k].label}</span>`).join("")}</div>`;
+  const tipData = buckets.map((b) => ({ when: `${new Date(b.a * 1000).toUTCString().slice(5, 22)} – ${fmtWhen(b.b, 0)} UTC`, n: b.n, vol: fmtTokens(b.vol),
+    ev: Object.entries(b.ev).map(([k, n]) => `${EV[k].label}${n > 1 ? " ×" + n : ""}`).join(", "),
+    dead: zones.some(([a, z]) => a < b.b && z > b.a) }));
+  window.__ACT = { tipData, sym: S.config.symbol, hasTx: known || tr.length > 0 };
+  const note = A.source === "simulator" ? "Simulated history."
+    : A.source === "lore" ? `Transfer history is unavailable right now (${esc(A.error || "indexer")}), so this shows the on-chain lore and the current deadline only.`
+    : A.partial ? "Showing the most recent 100 transactions from NearBlocks." : "History from NearBlocks; deaths and revivals from the contract's own lore.";
+  const rows = buckets.filter((b) => b.n || Object.keys(b.ev).length);
+  return `<section class="panel full"><div class="label">Activity — $${sym} transfers per ${fmtDur(bw)}, with every pulse, vote and revival</div>
+    ${legend}
+    <div class="chart"><svg viewBox="0 0 ${W} ${H}" font-family="JetBrains Mono, monospace" role="img" aria-label="Activity chart for $${sym}">
+      ${zoneSvg}${g}${bars}<line x1="${L}" x2="${R}" y1="${base}" y2="${base}" stroke="var(--dim)" stroke-width="1"/>${marks}${ticks}
+      <line id="xhair" x1="0" x2="0" y1="0" y2="${base}" stroke="var(--dim)" stroke-width="1" opacity="0"/>${hits}</svg>
+      <div class="tip" id="tip"></div></div>
+    <p class="hint" style="margin:6px 0 0">${note}</p>
+    <details><summary>Show as a table</summary><table class="t"><tr><th>When (UTC)</th><th>Transfers</th><th>Volume</th><th>Events</th></tr>
+      ${rows.map((b) => { const d = tipData[buckets.indexOf(b)]; return `<tr><td>${d.when}</td><td>${b.n}</td><td>${d.vol}</td><td>${esc(d.ev) || "—"}${d.dead ? " · flatlined" : ""}</td></tr>`; }).join("") || `<tr><td colspan="4">Nothing yet.</td></tr>`}
+    </table></details></section>`;
+}
+function bindChart() {
+  const svg = document.querySelector(".chart svg"), tip = $("tip"), xh = $("xhair"), A = window.__ACT;
+  if (!svg || !A) return;
+  svg.onpointermove = (e) => {
+    const h = e.target.closest?.(".hit"); if (!h) return;
+    const d = A.tipData[h.dataset.i], box = svg.getBoundingClientRect(), wrap = svg.parentElement.getBoundingClientRect();
+    const cx = Number(h.getAttribute("x")) + Number(h.getAttribute("width")) / 2;
+    xh.setAttribute("x1", cx); xh.setAttribute("x2", cx); xh.setAttribute("opacity", ".6");
+    tip.innerHTML = `${esc(d.when)}<br>${A.hasTx ? `${d.n} transfer${d.n === 1 ? "" : "s"} · ${esc(d.vol)} $${esc(A.sym)}<br>` : ""}${d.ev ? esc(d.ev) + "<br>" : ""}${d.dead ? `<span style="color:var(--dead)">flatlined</span>` : `<span style="color:var(--alive)">alive</span>`}`;
+    const px = cx / svg.viewBox.baseVal.width * box.width;
+    tip.style.left = Math.min(Math.max(0, px - 90), wrap.width - tip.offsetWidth) + "px"; tip.style.top = "-8px";
+    tip.style.transform = "translateY(-100%)"; tip.classList.add("on");
+  };
+  svg.onpointerleave = () => { tip.classList.remove("on"); xh.setAttribute("opacity", "0"); };
 }
 
 async function lorePanel(src, full) {
@@ -618,9 +1038,10 @@ async function lorePanel(src, full) {
 }
 
 async function verifyPanel(src, S) {
-  const v = await src.verify();
+  const v = await src.verify(S), guard = S.kind === "guard";
   const matches = v.factory_code_hash && v.code_hash === v.factory_code_hash;
-  const supplyOk = BigInt(v.supply) === BigInt(S.circulating ?? 0) + BigInt(S.dev_locked);
+  const owed = guard ? BigInt(S.staked) + BigInt(S.dev_locked) + BigInt(S.dev_burned) : 0n;
+  const supplyOk = guard ? BigInt(v.held) >= owed : BigInt(v.supply) === BigInt(S.circulating ?? 0) + BigInt(S.dev_locked);
   const solvent = BigInt(v.balance) >= BigInt(S.treasury);
   const keeperDao = isDao(S.keeper, S) && S.keeper !== S.creator;
   const item = (ok, title, detail) => `<div class="check"><span class="i" style="color:var(${ok === null ? "--vote" : ok ? "--alive" : "--dead"})">${ok === null ? "!" : ok ? "✓" : "✗"}</span>
@@ -628,14 +1049,19 @@ async function verifyPanel(src, S) {
   return `<section class="panel full"><div class="label">Verify — read live from ${DEMO ? "the simulator" : "NEAR RPC"}, no trust needed</div>
     ${item(v.keys === 0, v.keys === 0 ? "The coin has no access keys" : `The coin has ${v.keys} access key(s)`,
       "Nobody can sign transactions as this coin or replace its code. Only its rules can move its tokens and treasury.")}
-    ${item(matches, matches ? "Same code as every Revive coin" : "Code hash does not match the factory",
-      `Coin code hash <b>${esc(v.code_hash)}</b><br>Factory code hash <b>${esc(v.factory_code_hash || "—")}</b><br>SHA-256 hex ${esc(b58ToHex(v.code_hash))} — compare with the hash printed by <a href="${REPO}/actions" target="_blank" rel="noopener">CI</a>.`)}
+    ${item(matches, matches ? (guard ? "Same code as every Revive guard" : "Same code as every Revive coin") : "Code hash does not match the factory",
+      `${guard ? "Guard" : "Coin"} code hash <b>${esc(v.code_hash)}</b><br>Factory code hash <b>${esc(v.factory_code_hash || "—")}</b><br>SHA-256 hex ${esc(b58ToHex(v.code_hash))} — compare with the hash printed by <a href="${REPO}/actions" target="_blank" rel="noopener">CI</a>.`)}
     ${item(v.factory_keys === 0 ? true : v.factory_keys === null ? null : false, v.factory_keys === 0 ? "The factory is locked" : "The factory still has keys",
       `${esc(v.factory)} ${v.factory_keys === 0 ? "has no keys, so nobody can change how coins are made." : `has ${v.factory_keys ?? "?"} key(s).`}`)}
     ${item(solvent, solvent ? "The treasury is fully backed" : "Treasury exceeds the coin's balance",
       `Account balance ${fmtNear(v.balance)} ≥ treasury ${fmtNear(S.treasury)}.`)}
-    ${item(supplyOk, supplyOk ? "Supply adds up" : "Supply does not add up",
-      `Total ${fmtTokens(v.supply)} = held by holders ${fmtTokens(S.circulating ?? 0)} + creator locked ${fmtTokens(S.dev_locked)} (burned so far: ${fmtTokens(S.dev_burned)}).`)}
+    ${guard
+      ? item(supplyOk, supplyOk ? "Every staked and locked token is in the guard" : "The guard holds less than it owes",
+        `${esc(S.token_id)} says the guard holds ${fmtTokens(v.held)} $${esc(S.config.symbol)} ≥ staked ${fmtTokens(S.staked)} + creator bag ${fmtTokens(S.dev_locked)} + sealed ${fmtTokens(S.dev_burned)}.`)
+      : item(supplyOk, supplyOk ? "Supply adds up" : "Supply does not add up",
+        `Total ${fmtTokens(v.supply)} = held by holders ${fmtTokens(S.circulating ?? 0)} + creator locked ${fmtTokens(S.dev_locked)} (burned so far: ${fmtTokens(S.dev_burned)}).`)}
+    ${guard ? item(true, "The token itself is untouched", `${esc(v.meta.name || S.config.name)} ($${esc(v.meta.symbol || S.config.symbol)}, ${fmtTokens(v.supply)} supply) is its own NEP-141 contract.
+        Revive can't mint, freeze or move it; the guard only holds what holders and the creator send it.`) : ""}
     ${keeperDao && isSputnik(S.keeper)
       ? item(true, "The keeper is a Sputnik DAO", `${esc(S.keeper)} — holders revived this coin ${S.lives} time(s).`)
       : keeperDao
@@ -651,6 +1077,8 @@ function directorPanel(id) {
     <p class="hint">You are acting as <select id="actor" style="width:auto;display:inline-block">${["alice.testnet", "bob.testnet", "carol.testnet", "whale.testnet", "dev.testnet", REG.coin(id).keeper]
       .filter((v, i, a) => a.indexOf(v) === i).map((a) => `<option ${a === ACTOR.value ? "selected" : ""}>${a}</option>`).join("")}</select>. Run the story in order, or play any actor yourself.</p>
     ${id === MOCKS[0].id ? `<div class="steps">${STORY.map(([l], i) => `<button data-i="${i}">${l}</button>`).join("")}</div>` : ""}
+    <div class="actions"><button data-skip="21600">⏩ +6 hours</button><button data-skip="86400">⏩ +1 day</button>
+      ${REG.coin(id) instanceof GuardMock ? `<button data-buy="1">Whale buys 250M $${esc(REG.coin(id).cfg.symbol)}</button>` : ""}</div>
   </section>`;
 }
 const NINE = () => MOCKS[0];
@@ -686,6 +1114,21 @@ function bind(r) {
     on("b-yes", () => act("vote", { support: true }, "0", "Voted YES."));
     on("b-no", () => act("vote", { support: false }, "0", "Voted NO."));
     on("b-final", () => act("finalize_takeover", {}, "0", "Vote finalized."));
+    const amt = (id) => { const v = $(id).value; return parseUnits(v); };
+    const tokenAct = async (fn, ok) => {
+      try { await fn(); toast(ok); } catch (e) { toast(String(e.message || e).replace(/^.*Smart contract panicked: /, ""), true); }
+      await render();
+    };
+    on("b-stake", () => tokenAct(() => src.send(amt("stake-amt"), "stake"), "Staked. It starts counting now."));
+    on("b-unstake", () => tokenAct(() => src.call("unstake", { amount: amt("stake-amt") }, "0", TGAS100), "Unstaked back to your wallet."));
+    on("b-lock", () => tokenAct(() => src.send(amt("lock-amt"), "lock"), "Bag locked in the guard."));
+    on("b-max", () => { const b = $("b-max"); $("stake-amt").value = formatUnits(BigInt(b.dataset.w) > 0n ? b.dataset.w : b.dataset.s); });
+    document.querySelectorAll("[data-skip]").forEach((b) => b.onclick = () => { CLOCK.t += Number(b.dataset.skip); render(); });
+    document.querySelectorAll("[data-buy]").forEach((b) => b.onclick = () => {
+      try { src.buy("whale.testnet", 250_000_000); ACTOR.value = "whale.testnet"; toast("Whale bought 250M. Now acting as whale."); } catch (e) { toast(e.message, true); }
+      render();
+    });
+    bindChart();
     const actor = $("actor"); if (actor) actor.onchange = () => { ACTOR.value = actor.value; render(); };
     const steps = document.querySelector(".steps");
     if (steps) steps.onclick = async (e) => {
@@ -694,6 +1137,29 @@ function bind(r) {
       await render();
     };
     if ($("ecg")) startEcg();
+  }
+  if (r.page === "connect") {
+    on("b-check", async () => {
+      CONNECT.token = $("c-token").value.trim(); CONNECT.info = null; CONNECT.err = "";
+      try { CONNECT.info = await REG.token(CONNECT.token); if (!CONNECT.info.meta?.symbol) throw new Error("that account doesn't answer ft_metadata like a NEP-141 token"); }
+      catch (e) { CONNECT.info = null; CONNECT.err = /does not exist|doesn't exist|UNKNOWN_ACCOUNT/i.test(e.message) ? `${CONNECT.token} doesn't exist on ${NETWORK}` : /MethodNotFound|CodeDoesNotExist|no contract/i.test(e.message) ? `${CONNECT.token} isn't a NEP-141 token` : e.message; }
+      render();
+    });
+    const form = $("connectf");
+    if (form) {
+      const cost = () => { try { const { deposit } = readConnect(form); $("ccost").textContent = `You'll attach ${fmtNear(deposit)} (${fmtNear(CONNECT_COST)} for the guard + treasury seed).`; } catch {} };
+      form.oninput = cost; cost();
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const { name, config, deposit } = readConnect(form);
+        try {
+          const id = await REG.connect(name, config, deposit);
+          toast(`$${CONNECT.info.meta.symbol} connected. Lock your bag next.`);
+          CONNECT.token = ""; CONNECT.info = null;
+          location.hash = `#/coin/${encodeURIComponent(typeof id === "string" ? id : `${name}.${CONNECT_FACTORY}`)}`;
+        } catch (err) { toast(String(err.message || err), true); }
+      };
+    }
   }
   if (r.page === "launch") {
     const form = $("launch");
