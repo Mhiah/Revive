@@ -53,15 +53,23 @@ export async function run(opts) {
   };
 
   // ------------------------------------------------------------ accounts
-  // The factory holds its own code plus the stored coin code (~4 NEAR of storage).
-  const names = { dev: "6", alice: "0.3", bob: "0.3", carol: "0.3", whale: "0.3" };
-  const need = 5 + 6 + 4 * 0.3 + (givenSteward ? 0 : 0.5) + 0.3;
+  // Fund each account with what it needs: storage is 1 NEAR per 100 KB.
+  const coinBytes = (await readFile(coinWasm)).length;
+  const factoryBytes = (await readFile(factoryWasm)).length;
+  const perByte = 1e-5;                                         // NEAR per byte
+  const launchCost = (coinBytes + 10_000) * perByte;            // matches get_launch_cost
+  const factoryFund = (factoryBytes + coinBytes + 4_000) * perByte + 0.3;
+  const devFund = 2 * (launchCost + 0.1) + 0.2 + 0.3;          // two launches, treasury seeds, penalty, gas
+  const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
+  const names = { dev: r2(devFund), alice: "0.1", bob: "0.1", carol: "0.1", whale: "0.1" };
+  const need = factoryFund + devFund + 0.4 + (givenSteward ? 0 : 0.25) + 0.2;
+  log(`Coin wasm ${coinBytes} bytes, factory wasm ${factoryBytes} bytes`);
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
-  log(`Root ${rootId} has ${have} NEAR; this run needs about ${need} NEAR`);
+  log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
   if (have < need) throw new Error(`Not enough NEAR on ${rootId}: has ${have}, needs about ${need}. Top it up from the testnet faucet.`);
   log(`Creating demo accounts with tag ${tag}`);
   const factoryId = `${prefix}-${tag}.${rootId}`;
-  await root.createSubAccount({ accountOrPrefix: `${prefix}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto("5") });
+  await root.createSubAccount({ accountOrPrefix: `${prefix}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(r2(factoryFund)) });
   const acc = {};
   for (const [n, amt] of Object.entries(names)) {
     await root.createSubAccount({ accountOrPrefix: `${n}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(amt) });
@@ -73,9 +81,9 @@ export async function run(opts) {
   let stewardAcc = null;
   if (!steward) {
     // Stand-in steward: a plain account in its own namespace, nominated by suffix.
-    await root.createSubAccount({ accountOrPrefix: `stewards-${tag}`, publicKey: pub, nearToTransfer: nearToYocto("0.5") });
+    await root.createSubAccount({ accountOrPrefix: `stewards-${tag}`, publicKey: pub, nearToTransfer: nearToYocto("0.25") });
     const parent = as(`stewards-${tag}.${rootId}`);
-    await parent.createSubAccount({ accountOrPrefix: "ninelives", publicKey: stewardKey || pub, nearToTransfer: nearToYocto("0.2") });
+    await parent.createSubAccount({ accountOrPrefix: "ninelives", publicKey: stewardKey || pub, nearToTransfer: nearToYocto("0.1") });
     steward = `ninelives.stewards-${tag}.${rootId}`;
     suffix = `.stewards-${tag}.${rootId}`;
     stewardAcc = new Account(steward, provider, stewardKey || key.toString());
@@ -111,9 +119,9 @@ export async function run(opts) {
     const cfg = config(`${symbol === "NINE" ? "Nine Lives" : "Back From The Dead"}`, symbol);
     cfg.distributor = coinId;
     const cost = BigInt(await view(factoryId, "get_launch_cost"));
-    log(`  launch cost ${Number(cost / 10n ** 21n) / 1000} NEAR + 0.2 NEAR treasury`);
+    log(`  launch cost ${Number(cost / 10n ** 21n) / 1000} NEAR + 0.1 NEAR treasury`);
     const raw = await acc.dev.callFunctionRaw({ contractId: factoryId, methodName: "launch", args: { name, config: cfg },
-      deposit: (cost + BigInt(nearToYocto("0.2"))).toString(), gas: teraToGas("300") });
+      deposit: (cost + BigInt(nearToYocto("0.1"))).toString(), gas: teraToGas("300") });
     const failures = (raw.receipts_outcome || []).filter((r) => r.outcome.status && r.outcome.status.Failure);
     for (const f of failures) console.error("  receipt failed:", f.outcome.executor_id, JSON.stringify(f.outcome.status.Failure));
     for (const r of raw.receipts_outcome || []) for (const l of r.outcome.logs || []) if (!l.startsWith("EVENT_JSON")) console.log("  log:", l);

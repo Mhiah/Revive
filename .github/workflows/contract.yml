@@ -42,8 +42,17 @@ jobs:
       - name: Build wasm
         run: |
           cargo near --version
-          (cd contract && cargo near build non-reproducible-wasm)
-          (cd factory && cargo near build non-reproducible-wasm)
+          (cd contract && cargo near build non-reproducible-wasm --no-abi)
+          (cd factory && cargo near build non-reproducible-wasm --no-abi)
+
+      - name: Shrink wasm (smaller code = cheaper storage)
+        run: |
+          sudo apt-get install -yq binaryen >/dev/null
+          for w in contract/target/near/revive.wasm factory/target/near/revive_factory.wasm; do
+            before=$(stat -c%s $w)
+            wasm-opt -Oz --strip-debug --strip-producers $w -o $w.opt && mv $w.opt $w
+            echo "$w: $before -> $(stat -c%s $w) bytes"
+          done
 
       - name: SHA-256 of the wasm (compare with the deployed code hash)
         run: |

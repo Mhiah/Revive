@@ -12,7 +12,7 @@ use near_sdk::{env, near, require, AccountId, BorshStorageKey, Gas, NearToken, P
 
 const CODE_KEY: &[u8] = b"code";
 /// Room for the coin's state on top of its code: account, config, first holders, lore.
-const STATE_BYTES: u128 = 20_000;
+const STATE_BYTES: u128 = 10_000;
 const GAS_FOR_INIT: Gas = Gas::from_tgas(60);
 const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(15);
 
@@ -230,7 +230,7 @@ mod tests {
         ctx("mia.testnet", 0, vec![]);
         let mut f = Factory::new("mia.testnet".parse().unwrap());
         f.internal_store_code(fake_wasm());
-        assert_eq!(f.get_launch_cost().0, (2_004 + 20_000) * env::storage_byte_cost().as_yoctonear());
+        assert_eq!(f.get_launch_cost().0, (2_004 + 10_000) * env::storage_byte_cost().as_yoctonear());
     }
 
     #[test]
