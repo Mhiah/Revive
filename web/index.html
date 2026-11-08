@@ -381,6 +381,8 @@ const REG = DEMO ? demoRegistry : liveRegistry;
 const COLORS = { alive: "--alive", flatlined: "--dead", voting: "--vote", vote_closed: "--vote" };
 const LABEL = { alive: "ALIVE", flatlined: "FLATLINED", voting: "TAKEOVER VOTE", vote_closed: "VOTE CLOSED" };
 const LORE_C = { born: "--alive", comeback: "--vote", flatline: "--dead", takeover: "--vote", takeover_failed: "--dead", revived: "--alive", spend: "--dao", links: "--dao" };
+const SPUTNIK = [".sputnikv2.testnet", ".sputnik-dao.near"];
+const isSputnik = (a) => SPUTNIK.some((x) => a.endsWith(x));
 const isDao = (a, s) => a.endsWith(s.config.dao_suffix);
 const setAccent = (status) => document.documentElement.style.setProperty("--accent", getComputedStyle(document.documentElement).getPropertyValue(COLORS[status] || "--alive"));
 
@@ -620,7 +622,7 @@ async function verifyPanel(src, S) {
   const matches = v.factory_code_hash && v.code_hash === v.factory_code_hash;
   const supplyOk = BigInt(v.supply) === BigInt(S.circulating ?? 0) + BigInt(S.dev_locked);
   const solvent = BigInt(v.balance) >= BigInt(S.treasury);
-  const keeperDao = isDao(S.keeper, S);
+  const keeperDao = isDao(S.keeper, S) && S.keeper !== S.creator;
   const item = (ok, title, detail) => `<div class="check"><span class="i" style="color:var(${ok === null ? "--vote" : ok ? "--alive" : "--dead"})">${ok === null ? "!" : ok ? "✓" : "✗"}</span>
     <div><b>${title}</b><div class="d">${detail}</div></div></div>`;
   return `<section class="panel full"><div class="label">Verify — read live from ${DEMO ? "the simulator" : "NEAR RPC"}, no trust needed</div>
@@ -634,8 +636,11 @@ async function verifyPanel(src, S) {
       `Account balance ${fmtNear(v.balance)} ≥ treasury ${fmtNear(S.treasury)}.`)}
     ${item(supplyOk, supplyOk ? "Supply adds up" : "Supply does not add up",
       `Total ${fmtTokens(v.supply)} = held by holders ${fmtTokens(S.circulating ?? 0)} + creator locked ${fmtTokens(S.dev_locked)} (burned so far: ${fmtTokens(S.dev_burned)}).`)}
-    ${item(keeperDao ? true : null, keeperDao ? "The keeper is a Sputnik DAO" : "The keeper is the creator",
-      keeperDao ? `${esc(S.keeper)} — holders revived this coin ${S.lives} time(s).` : `If ${esc(S.keeper)} stops pulsing, holders can vote a DAO in.`)}
+    ${keeperDao && isSputnik(S.keeper)
+      ? item(true, "The keeper is a Sputnik DAO", `${esc(S.keeper)} — holders revived this coin ${S.lives} time(s).`)
+      : keeperDao
+      ? item(null, "The keeper is the steward holders voted in", `${esc(S.keeper)} — holders revived this coin ${S.lives} time(s). This demo coin uses a stand-in steward account, not a Sputnik DAO (its suffix is ${esc(S.config.dao_suffix)}).`)
+      : item(null, "The keeper is the creator", `If ${esc(S.keeper)} stops pulsing, holders can vote a DAO in.`)}
   </section>`;
 }
 
