@@ -19,7 +19,12 @@ on-chain lore.
 * [`nine.revive-ztw7t.revive.testnet`](https://testnet.nearblocks.io/address/nine.revive-ztw7t.revive.testnet): flatlined, a whale's post-death vote refused, revived; 100M creator tokens burned.
 * [`back.revive-ztw7t.revive.testnet`](https://testnet.nearblocks.io/address/back.revive-ztw7t.revive.testnet): the dev came back mid-vote and paid the penalty.
 
-Both stories were played by the [testnet-demo workflow](.github/workflows/testnet-demo.yml) with 60-second timers,
+Connecting a token launched elsewhere runs through a second locked factory,
+[`revive-bhtat.revive.testnet`](https://testnet.nearblocks.io/address/revive-bhtat.revive.testnet):
+
+* [`meme-cia7y.revive-bhtat.revive.testnet`](https://testnet.nearblocks.io/address/meme-cia7y.revive-bhtat.revive.testnet) guards the plain NEP-141 [`meme-cia7y.revive.testnet`](https://testnet.nearblocks.io/address/meme-cia7y.revive.testnet): the dev locked 100M, holders staked, the dev went silent, a whale's post-death stake got no vote, holders took over and the dev's 100M is sealed in the guard. (`meme.revive-bhtat.revive.testnet` is from a run that stopped halfway; its demo accounts' keys were discarded, so it stays flatlined.)
+
+All stories were played by the [testnet-demo workflow](.github/workflows/testnet-demo.yml) with 60-second timers,
 so both coins have since flatlined again: anyone holding from before can open a takeover.
 
 **Already launched somewhere else?** Any NEP-141 token can be **connected**: Revive deploys a guard next to it
@@ -32,7 +37,7 @@ Open **Nine Lives** and click the story buttons in order.
 
 | Do this | You should see |
 | --- | --- |
-| Open [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) | **Flatline Watch** listing `$NINE` and `$BACK`, read live from NEAR testnet |
+| Open [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) | **Flatline Watch** listing `$NINE`, `$BACK` and the connected `$MEME` (tagged *connected*), read live from NEAR testnet |
 | Click **Nine Lives** → **Verify** | Six checks from RPC: no access keys on the coin, its code hash equals the factory's, the factory has no keys, treasury backed, supply adds up (100M burned), and who the keeper is |
 | Click **Lore** | The coin's on-chain history: born, flatline, takeover, revived |
 | Click **Activity** | Token transfers over time, every pulse and vote marked, flatlined stretches shaded red |
