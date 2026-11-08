@@ -1,6 +1,6 @@
 # Revive
 
-**The memecoin its dev can't kill.**
+**Onchain CTO for NEAR memecoins.**
 
 Revive is a NEAR memecoin with a community takeover built into the contract.
 The keeper has to send an on-chain **pulse** before every deadline. If the pulse

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Revive — the memecoin its dev can't kill</title>
-<meta name="description" content="Revive: NEAR memecoins with a community takeover built into the contract.">
+<title>Revive — onchain CTO for NEAR memecoins</title>
+<meta name="description" content="Revive: onchain community takeover (CTO) for NEAR memecoins. Keeper heartbeat, hold-time-weighted takeover vote, Sputnik DAO steward.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -436,10 +436,11 @@ async function watchView() {
   };
   return `
     <section class="panel full hero">
-      <div class="label">NEAR memecoins with a community takeover built in</div>
-      <h1>The memecoin its dev <em>can't kill.</em></h1>
-      <p>Every Revive coin has a heartbeat. If the keeper stops pulsing, holders who were there before the death can vote a Sputnik DAO in,
-        burn the dev's locked tokens and bring the coin back to life. Tokens bought after the death get no vote.</p>
+      <div class="label">NEP-141 · Sputnik DAO · NEAR</div>
+      <h1>Community takeover, <em>onchain.</em></h1>
+      <p>A CTO enforced by the token contract, not a new Telegram. The keeper posts a heartbeat every interval.
+        Miss it and the coin flatlines: holders vote a Sputnik DAO in as keeper, weighted by token-seconds held before the flatline.
+        A passed vote burns the creator's locked allocation, hands over the treasury and metadata, and increments the coin's lives.</p>
       <div class="stats">
         <div class="stat"><div class="label">Coins</div><div class="v">${live.length}</div></div>
         <div class="stat"><div class="label">Flatlined now</div><div class="v" style="color:var(--dead)">${dead}</div></div>
