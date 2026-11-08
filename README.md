@@ -13,8 +13,17 @@ on-chain lore.
 > Built at NEAR HACKATHON (November 2026).
 > Tracks: **Memecoins With Mechanics** (primary), **Social Money** (Sputnik DAO as the steward).
 
-**Try it now, no wallet:** [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) opens in demo mode
-(a simulator with the same rules). Open **Nine Lives** and click the story buttons in order.
+**Live on NEAR testnet:** [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) reads the factory
+[`revive-ztw7t.revive.testnet`](https://testnet.nearblocks.io/address/revive-ztw7t.revive.testnet) and its coins over RPC:
+
+* [`nine.revive-ztw7t.revive.testnet`](https://testnet.nearblocks.io/address/nine.revive-ztw7t.revive.testnet): flatlined, a whale's post-death vote refused, revived; 100M creator tokens burned.
+* [`back.revive-ztw7t.revive.testnet`](https://testnet.nearblocks.io/address/back.revive-ztw7t.revive.testnet): the dev came back mid-vote and paid the penalty.
+
+Both stories were played by the [testnet-demo workflow](.github/workflows/testnet-demo.yml) with 60-second timers,
+so both coins have since flatlined again: anyone holding from before can open a takeover.
+
+**No wallet?** [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) runs a simulator with the same rules.
+Open **Nine Lives** and click the story buttons in order.
 
 ## Why
 
