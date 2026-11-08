@@ -153,7 +153,6 @@ const CONNECT_FACTORY = params.get("connect") || DEFAULT_CONNECT;
 const FACTORIES = [...new Set([FACTORY_ID, CONNECT_FACTORY].filter(Boolean))];
 const LEGACY_COIN = params.get("contract");                 // old single-coin links
 const DEMO = params.has("demo") || (!FACTORY_ID && !LEGACY_COIN);
-const NB = NETWORK === "mainnet" ? "https://api.nearblocks.io/v3" : "https://api-testnet.nearblocks.io/v3";
 const RPCS = NETWORK === "mainnet"
   ? ["https://free.rpc.fastnear.com", "https://near.drpc.org"]
   : ["https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"];
@@ -273,36 +272,59 @@ const liveRegistry = {
   coin: (id) => liveCoin(id),
 };
 
-// NearBlocks has the transaction history RPC doesn't keep. Its free tier allows only a few
-// calls a minute, so each coin's history is fetched at most every 3 minutes and reused.
+// RPC nodes don't keep transaction history, so the Activity chart reads it from FastNEAR's
+// public transactions API (no key, CORS open). Each coin's history is reused for 2 minutes.
+const FTX = NETWORK === "mainnet" ? "https://tx.main.fastnear.com/v0" : "https://tx.test.fastnear.com/v0";
 const ACT = new Map();
-async function nearblocks(path) {
-  const r = await fetch(NB + path);
-  if (r.status === 429) throw new Error("NearBlocks rate limit");
-  if (!r.ok) throw new Error("NearBlocks " + r.status);
-  return (await r.json()).data || [];
+async function fpost(path, body) {
+  const r = await fetch(FTX + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error("FastNEAR " + r.status);
+  return r.json();
 }
-const nsToS = (ns) => Number(BigInt(ns) / 1_000_000_000n);
+const nsToS = (ns) => Math.floor(Number(ns) / 1e9);
+async function txHistory(account, max = 200) {
+  const a = await fpost("/account", { account_id: account });
+  const list = (a.account_txs || []).slice(0, max), ok = new Map(list.map((t) => [t.transaction_hash, t]));
+  const chunks = [];
+  for (let i = 0; i < list.length; i += 20) chunks.push(list.slice(i, i + 20).map((t) => t.transaction_hash));
+  const txs = (await Promise.all(chunks.map((h) => fpost("/transactions", { tx_hashes: h })))).flatMap((j) => j.transactions || []);
+  return { txs, ok, partial: (a.txs_count ?? list.length) > list.length };
+}
+// NEP-141 events the token itself logged: one entry per transfer or mint.
+function ftEvents(txs, token) {
+  const out = [];
+  for (const tx of txs) for (const r of tx.receipts || []) {
+    const eo = r.execution_outcome;
+    if (!eo || eo.outcome.executor_id !== token || eo.outcome.status?.Failure) continue;
+    for (const log of eo.outcome.logs || []) {
+      if (!log.startsWith("EVENT_JSON:")) continue;
+      let e; try { e = JSON.parse(log.slice(11)); } catch { continue; }
+      if (e.standard !== "nep141" || !["ft_transfer", "ft_mint"].includes(e.event)) continue;
+      for (const d of e.data || []) out.push({ t: nsToS(eo.block_timestamp), amount: d.amount, to: d.new_owner_id || d.owner_id, from: d.old_owner_id || null });
+    }
+  }
+  return out;
+}
 async function liveActivity(id, S, lore) {
   const token = S.kind === "guard" ? S.token_id : id;
   const hit = ACT.get(id);
-  if (hit && Date.now() - hit.at < 180_000) return withLore(hit.d, S, lore);
+  if (hit && Date.now() - hit.at < 120_000) return withLore(hit.d, S, lore);
   let d;
   try {
-    const [txs, fts] = await Promise.all([nearblocks(`/accounts/${id}/txns?per_page=100`), nearblocks(`/fts/${token}/txns?per_page=100`)]);
-    const calls = txs.filter((t) => t.receiver_account_id === id && t.outcomes?.status)
-      .flatMap((t) => (t.actions || []).map((a) => ({ t: nsToS(t.block_timestamp), kind: a.method, by: t.signer_account_id })))
+    const [own, tok] = await Promise.all([txHistory(id), token === id ? null : txHistory(token)]);
+    const calls = own.txs.filter((tx) => tx.transaction.receiver_id === id && own.ok.get(tx.transaction.hash)?.is_success)
+      .flatMap((tx) => tx.transaction.actions.map((a) => ({ t: nsToS(own.ok.get(tx.transaction.hash).tx_block_timestamp),
+        kind: a.FunctionCall?.method_name, by: tx.transaction.signer_id })))
       .filter((e) => e.kind === "pulse" || e.kind === "vote");
-    const transfers = fts.filter((f) => BigInt(f.delta_amount) > 0n)
-      .map((f) => ({ t: nsToS(f.block_timestamp), amount: f.delta_amount, to: f.affected_account_id, from: f.involved_account_id }));
+    const transfers = ftEvents((tok || own).txs, token);
+    const partial = own.partial || !!tok?.partial;
     const times = [...calls, ...transfers].map((x) => x.t);
-    const partial = txs.length >= 100 || fts.length >= 100;
-    d = { calls, transfers, partial, from: partial && times.length ? Math.min(...times) : null, source: "NearBlocks" };
+    d = { calls, transfers, partial, from: partial && times.length ? Math.min(...times) : null, source: "FastNEAR" };
   } catch (e) {
     if (hit) return withLore(hit.d, S, lore);               // keep the last good copy
     d = { calls: [], transfers: null, partial: true, from: null, source: "lore", error: e.message };
   }
-  ACT.set(id, { at: Date.now() - (d.error ? 150_000 : 0), d });   // a failed fetch is retried after 30s
+  ACT.set(id, { at: Date.now() - (d.error ? 90_000 : 0), d });   // a failed fetch is retried after 30s
   return withLore(d, S, lore);
 }
 // Lore is on-chain and complete: it supplies births, comebacks, takeovers and revivals.
@@ -1000,7 +1022,7 @@ async function activityPanel(src, S) {
   window.__ACT = { tipData, sym: S.config.symbol, hasTx: known || tr.length > 0 };
   const note = A.source === "simulator" ? "Simulated history."
     : A.source === "lore" ? `Transfer history is unavailable right now (${esc(A.error || "indexer")}), so this shows the on-chain lore and the current deadline only.`
-    : A.partial ? "Showing the most recent 100 transactions from NearBlocks." : "History from NearBlocks; deaths and revivals from the contract's own lore.";
+    : A.partial ? "Showing the most recent 200 transactions (via FastNEAR); deaths and revivals from the contract's own lore." : "Transaction history via FastNEAR; deaths and revivals from the contract's own lore.";
   const rows = buckets.filter((b) => b.n || Object.keys(b.ev).length);
   return `<section class="panel full"><div class="label">Activity — $${sym} transfers per ${fmtDur(bw)}, with every pulse, vote and revival</div>
     ${legend}

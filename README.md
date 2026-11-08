@@ -149,9 +149,9 @@ Full day-by-day data: [docs/simulation.json](docs/simulation.json).
 | **Coin · Lore** | Every birth, death, takeover, comeback and revival, from the contract. |
 
 State is read directly over RPC; there is no backend. The **Activity** chart also needs past
-transactions, which RPC nodes don't keep, so it reads them from the public NearBlocks API (cached
-for 3 minutes because of its rate limit). If NearBlocks is unavailable, it falls back to the
-contract's lore and current deadline and says so.
+transactions, which RPC nodes don't keep, so it reads them from FastNEAR's public transactions API
+and counts the token's own NEP-141 `ft_transfer` events. If that API is unavailable, the chart falls
+back to the contract's lore and current deadline and says so.
 
 ## How we used NEAR
 
