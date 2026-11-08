@@ -3,13 +3,11 @@ name: contract
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: contract
     steps:
       - uses: actions/checkout@v4
 
@@ -17,13 +15,21 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Unit tests
-        run: cargo test
+      - name: Unit tests and lints
+        run: |
+          for c in contract factory; do
+            (cd $c && cargo test && cargo clippy --all-targets -- -D warnings)
+          done
 
-      - name: Lints
-        run: cargo clippy --all-targets -- -D warnings
+      - name: Cache cargo-near
+        id: cache-cargo-near
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-near
+          key: cargo-near-${{ runner.os }}-v1
 
       - name: Install cargo-near
+        if: steps.cache-cargo-near.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
           if ! curl --proto '=https' --tlsv1.2 -LsSf --retry 5 --retry-all-errors \
@@ -32,15 +38,35 @@ jobs:
             sudo apt-get update -q && sudo apt-get install -yq libudev-dev pkg-config
             cargo install cargo-near --locked
           fi
-          cargo near --version
 
       - name: Build wasm
-        run: cargo near build non-reproducible-wasm
+        run: |
+          cargo near --version
+          (cd contract && cargo near build non-reproducible-wasm)
+          (cd factory && cargo near build non-reproducible-wasm)
 
       - name: SHA-256 of the wasm (compare with the deployed code hash)
-        run: sha256sum target/near/revive.wasm
+        run: sha256sum contract/target/near/revive.wasm factory/target/near/revive_factory.wasm
 
       - uses: actions/upload-artifact@v4
         with:
           name: revive-wasm
-          path: contract/target/near/revive.wasm
+          path: |
+            contract/target/near/revive.wasm
+            factory/target/near/revive_factory.wasm
+
+  sandbox-e2e:
+    needs: test-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: revive-wasm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run both stories on a local NEAR sandbox
+        run: |
+          cd scripts && npm install --no-audit --no-fund && cd ..
+          node scripts/sandbox-e2e.mjs

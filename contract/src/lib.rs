@@ -66,6 +66,9 @@ pub struct LaunchConfig {
     pub comeback_penalty: U128,
     /// Account suffix every steward must have, e.g. ".sputnik-dao.near".
     pub dao_suffix: String,
+    /// Set only by the Revive factory that created this account, to name the
+    /// real creator (otherwise the caller of `new` is the creator).
+    pub creator: Option<AccountId>,
 }
 
 #[near(serializers = [borsh, json])]
@@ -199,11 +202,20 @@ impl Revive {
         require!(config.symbol.len() <= 16 && !config.symbol.is_empty(), "symbol must be 1..=16 chars");
 
         let t = now();
-        let creator = env::predecessor_account_id();
+        let caller = env::predecessor_account_id();
+        let creator = match config.creator {
+            Some(c) => {
+                let parent_suffix = format!(".{}", caller);
+                require!(env::current_account_id().as_str().ends_with(&parent_suffix), "only the parent factory can name the creator");
+                c
+            }
+            None => caller,
+        };
+        let distributor = if config.distributor == env::current_account_id() { creator.clone() } else { config.distributor };
         let liquid = supply - dev;
         let mut holders = LookupMap::new(StorageKey::Holders);
-        holders.insert(config.distributor.clone(), Holder { balance: liquid, since: t });
-        if creator != config.distributor {
+        holders.insert(distributor.clone(), Holder { balance: liquid, since: t });
+        if creator != distributor {
             holders.insert(creator.clone(), Holder { balance: 0, since: t });
         }
 
@@ -245,7 +257,7 @@ impl Revive {
             lore: Vector::new(StorageKey::Lore),
         };
 
-        emit("nep141", "1.0.0", "ft_mint", json!({ "owner_id": config.distributor, "amount": liquid.to_string(), "memo": "launch" }));
+        emit("nep141", "1.0.0", "ft_mint", json!({ "owner_id": distributor, "amount": liquid.to_string(), "memo": "launch" }));
         if dev > 0 {
             emit("nep141", "1.0.0", "ft_mint", json!({ "owner_id": env::current_account_id(), "amount": dev.to_string(), "memo": "creator allocation, locked" }));
         }

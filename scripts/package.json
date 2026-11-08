@@ -1,0 +1,13 @@
+{
+  "name": "revive-scripts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "e2e": "node sandbox-e2e.mjs",
+    "demo": "node demo-coins.mjs"
+  },
+  "dependencies": {
+    "near-api-js": "7.4.0",
+    "near-sandbox": "0.3.5"
+  }
+}

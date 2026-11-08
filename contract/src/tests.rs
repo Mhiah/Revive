@@ -58,6 +58,7 @@ fn launch(w: &World) -> Revive {
         spend_period_secs: 7 * DAY,
         comeback_penalty: U128(2 * NEAR),
         dao_suffix: ".sputnikv2.testnet".into(),
+        creator: None,
     })
 }
 
@@ -116,6 +117,7 @@ fn creator_allocation_capped() {
         spend_period_secs: DAY,
         comeback_penalty: U128(NEAR),
         dao_suffix: ".sputnikv2.testnet".into(),
+        creator: None,
     });
 }
 
@@ -415,4 +417,41 @@ fn running_total_matches_sum_of_holders() {
     let fast = c.eligible_total(f);
     let diff = by_hand.abs_diff(fast);
     assert!(diff <= 4, "running total {fast} vs sum {by_hand}");
+}
+
+#[test]
+fn factory_names_the_creator() {
+    let w = World::new();
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acc("nine.revive-factory.testnet"))
+        .predecessor_account_id(acc("revive-factory.testnet"))
+        .block_timestamp(w.t * 1_000_000_000);
+    testing_env!(b.build());
+    let c = Revive::new(LaunchConfig {
+        name: "Nine".into(), symbol: "NINE".into(), icon: None, links: None,
+        total_supply: U128(1_000 * TOKEN), dev_allocation: U128(100 * TOKEN),
+        distributor: acc("nine.revive-factory.testnet"),
+        pulse_interval_secs: DAY, vote_duration_secs: DAY, quorum_bps: 2_000, vest_duration_secs: 0,
+        spend_cap: U128(NEAR), spend_period_secs: DAY, comeback_penalty: U128(NEAR),
+        dao_suffix: ".sputnikv2.testnet".into(), creator: Some(acc("mia.testnet")),
+    });
+    let s = c.get_status();
+    assert_eq!(s.creator, acc("mia.testnet"));
+    assert_eq!(s.keeper, acc("mia.testnet"));
+    assert_eq!(c.ft_balance_of(acc("mia.testnet")).0, 900 * TOKEN, "distributor = coin itself means the creator gets the liquid supply");
+}
+
+#[test]
+#[should_panic(expected = "only the parent factory can name the creator")]
+fn strangers_cannot_name_the_creator() {
+    let w = World::new();
+    w.at("mallory.testnet", 0);
+    Revive::new(LaunchConfig {
+        name: "Fake".into(), symbol: "FAKE".into(), icon: None, links: None,
+        total_supply: U128(1_000 * TOKEN), dev_allocation: U128(0),
+        distributor: acc("mallory.testnet"),
+        pulse_interval_secs: DAY, vote_duration_secs: DAY, quorum_bps: 2_000, vest_duration_secs: 0,
+        spend_cap: U128(NEAR), spend_period_secs: DAY, comeback_penalty: U128(NEAR),
+        dao_suffix: ".sputnikv2.testnet".into(), creator: Some(acc("vitalik.testnet")),
+    });
 }

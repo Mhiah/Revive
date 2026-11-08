@@ -1,0 +1,230 @@
+//! Revive factory: anyone launches a Revive coin as `<name>.<factory>`.
+//!
+//! The owner stores the Revive wasm once (`store_code`). After that the code
+//! can never change, every coin gets the same code, and its code hash is
+//! public through `get_code_hash`. The deploy script then deletes the
+//! factory's keys, so nobody controls it.
+
+use near_sdk::json_types::{Base58CryptoHash, U128};
+use near_sdk::serde_json::{self, json, Value};
+use near_sdk::store::Vector;
+use near_sdk::{env, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise};
+
+const CODE_KEY: &[u8] = b"code";
+/// Kept from every launch for the new account's storage (code + state).
+pub const STORAGE_ALLOWANCE: u128 = 1_500_000_000_000_000_000_000_000; // 1.5 NEAR
+const GAS_FOR_INIT: Gas = Gas::from_tgas(60);
+const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(15);
+
+#[near(serializers = [borsh])]
+#[derive(BorshStorageKey)]
+enum StorageKey {
+    Coins,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone)]
+pub struct CoinEntry {
+    pub account_id: AccountId,
+    pub name: String,
+    pub symbol: String,
+    pub creator: AccountId,
+    pub launched_at: u64,
+}
+
+#[near(contract_state)]
+#[derive(PanicOnDefault)]
+pub struct Factory {
+    owner: AccountId,
+    code_hash: Option<Vec<u8>>,
+    code_len: u64,
+    coins: Vector<CoinEntry>,
+}
+
+#[near]
+impl Factory {
+    #[init]
+    pub fn new(owner: AccountId) -> Self {
+        Self { owner, code_hash: None, code_len: 0, coins: Vector::new(StorageKey::Coins) }
+    }
+
+    /// Owner stores the Revive wasm, sent as the raw transaction input. Once only.
+    pub fn store_code(&mut self) {
+        let code = env::input().unwrap_or_else(|| env::panic_str("send the wasm as the input"));
+        self.internal_store_code(code);
+    }
+
+    /// Launch a coin as `<name>.<factory>`. The caller becomes the creator and
+    /// first keeper. Attach at least 1.5 NEAR for storage; anything above that
+    /// seeds the coin's treasury.
+    #[payable]
+    pub fn launch(&mut self, name: String, config: Value) -> Promise {
+        require!(self.code_hash.is_some(), "the factory has no code yet");
+        require!(
+            name.len() >= 2 && name.len() <= 32 && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_'),
+            "name must be 2-32 chars of a-z, 0-9, - or _"
+        );
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(deposit >= STORAGE_ALLOWANCE, "attach at least 1.5 NEAR");
+        let treasury = deposit - STORAGE_ALLOWANCE;
+
+        let creator = env::predecessor_account_id();
+        let account: AccountId = format!("{}.{}", name, env::current_account_id()).parse().unwrap_or_else(|_| env::panic_str("invalid name"));
+        let mut config = config;
+        let obj = config.as_object_mut().unwrap_or_else(|| env::panic_str("config must be an object"));
+        obj.insert("creator".into(), json!(creator));
+        let coin_name = obj.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
+        let symbol = obj.get("symbol").and_then(Value::as_str).unwrap_or_default().to_string();
+        let args = serde_json::to_vec(&json!({ "config": config })).unwrap();
+
+        let code = env::storage_read(CODE_KEY).unwrap();
+        Promise::new(account.clone())
+            .create_account()
+            .transfer(NearToken::from_yoctonear(STORAGE_ALLOWANCE))
+            .deploy_contract(code)
+            .function_call("new", args, NearToken::from_yoctonear(treasury), GAS_FOR_INIT)
+            .then(
+                Self::ext(env::current_account_id())
+                    .with_static_gas(GAS_FOR_CALLBACK)
+                    .on_launch(account, coin_name, symbol, creator, U128(deposit)),
+            )
+    }
+
+    /// Records the coin if it launched; refunds the creator if it didn't.
+    #[private]
+    pub fn on_launch(&mut self, account_id: AccountId, name: String, symbol: String, creator: AccountId, deposit: U128) -> bool {
+        let ok = env::promise_result_checked(0, 1_000).is_ok();
+        if ok {
+            self.coins.push(CoinEntry { account_id: account_id.clone(), name, symbol, creator: creator.clone(), launched_at: env::block_timestamp() / 1_000_000_000 });
+            env::log_str(&format!("EVENT_JSON:{}", json!({
+                "standard": "revive-factory", "version": "1.0.0", "event": "launched",
+                "data": [{ "account_id": account_id, "creator": creator }]
+            })));
+        } else {
+            // A failed batch returns its NEAR to the factory, so pay the creator back.
+            let _ = Promise::new(creator).transfer(NearToken::from_yoctonear(deposit.0));
+        }
+        ok
+    }
+
+    // ------------------------------------------------------------- views
+
+
+    pub fn get_coins(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<CoinEntry> {
+        let from = from_index.unwrap_or(0);
+        let limit = limit.unwrap_or(50).min(100);
+        (from..self.coins.len().min(from.saturating_add(limit))).filter_map(|i| self.coins.get(i).cloned()).collect()
+    }
+
+    pub fn get_coin_count(&self) -> u32 {
+        self.coins.len()
+    }
+
+    /// Base58 sha256 of the stored wasm. Every coin's account code hash equals this.
+    pub fn get_code_hash(&self) -> Option<Base58CryptoHash> {
+        self.code_hash.as_ref().map(|h| {
+            let arr: [u8; 32] = h.as_slice().try_into().unwrap();
+            Base58CryptoHash::from(arr)
+        })
+    }
+
+    pub fn get_owner(&self) -> AccountId {
+        self.owner.clone()
+    }
+
+    pub fn get_code_len(&self) -> u64 {
+        self.code_len
+    }
+}
+
+impl Factory {
+    fn internal_store_code(&mut self, code: Vec<u8>) {
+        require!(env::predecessor_account_id() == self.owner, "only the owner stores the code");
+        require!(self.code_hash.is_none(), "the code is already stored and can never change");
+        require!(code.len() > 1_000 && code.starts_with(b"\0asm"), "input is not a wasm file");
+        let hash = env::sha256(&code);
+        env::storage_write(CODE_KEY, &code);
+        self.code_len = code.len() as u64;
+        self.code_hash = Some(hash);
+        env::log_str(&format!("EVENT_JSON:{}", json!({
+            "standard": "revive-factory", "version": "1.0.0", "event": "code_stored",
+            "data": [{ "code_hash": self.get_code_hash(), "bytes": code.len() }]
+        })));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use near_sdk::test_utils::VMContextBuilder;
+    use near_sdk::testing_env;
+
+    fn ctx(who: &str, deposit: u128, _input: Vec<u8>) {
+        let mut b = VMContextBuilder::new();
+        b.current_account_id("revive.testnet".parse().unwrap())
+            .predecessor_account_id(who.parse().unwrap())
+            .attached_deposit(NearToken::from_yoctonear(deposit));
+        testing_env!(b.build());
+    }
+
+    fn fake_wasm() -> Vec<u8> {
+        let mut w = b"\0asm".to_vec();
+        w.extend(vec![7u8; 2_000]);
+        w
+    }
+
+    #[test]
+    fn stores_code_once_and_exposes_hash() {
+        ctx("mia.testnet", 0, fake_wasm());
+        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        f.internal_store_code(fake_wasm());
+        assert!(f.get_code_hash().is_some());
+        assert_eq!(f.get_code_len(), 2_004);
+    }
+
+    #[test]
+    #[should_panic(expected = "the code is already stored and can never change")]
+    fn code_cannot_change() {
+        ctx("mia.testnet", 0, fake_wasm());
+        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        f.internal_store_code(fake_wasm());
+        f.internal_store_code(fake_wasm());
+    }
+
+    #[test]
+    #[should_panic(expected = "only the owner stores the code")]
+    fn only_owner_stores_code() {
+        ctx("mallory.testnet", 0, fake_wasm());
+        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        f.internal_store_code(fake_wasm());
+    }
+
+    #[test]
+    #[should_panic(expected = "name must be 2-32 chars")]
+    fn rejects_bad_names() {
+        ctx("mia.testnet", 0, fake_wasm());
+        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        f.internal_store_code(fake_wasm());
+        ctx("bob.testnet", 2 * 10u128.pow(24), vec![]);
+        let _ = f.launch("Bad.Name".into(), json!({ "name": "x", "symbol": "X" }));
+    }
+
+    #[test]
+    #[should_panic(expected = "attach at least 1.5 NEAR")]
+    fn launch_needs_storage_deposit() {
+        ctx("mia.testnet", 0, fake_wasm());
+        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        f.internal_store_code(fake_wasm());
+        ctx("bob.testnet", 10u128.pow(24), vec![]);
+        let _ = f.launch("nine".into(), json!({ "name": "Nine", "symbol": "NINE" }));
+    }
+
+    #[test]
+    fn launch_builds_the_promise() {
+        ctx("mia.testnet", 0, fake_wasm());
+        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        f.internal_store_code(fake_wasm());
+        ctx("bob.testnet", 2 * 10u128.pow(24), vec![]);
+        let _ = f.launch("nine".into(), json!({ "name": "Nine", "symbol": "NINE" }));
+    }
+}
