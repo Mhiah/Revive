@@ -980,8 +980,10 @@ async function activityPanel(src, S) {
   const ts = [...A.events.map((e) => e.t), ...tr.map((x) => x.t)].filter((t) => t >= t0);
   const lo = Math.min(...ts), hi = Math.max(...ts), canZoom = ts.length > 2 && hi - lo < (now - t0) * 0.25;
   const zoom = canZoom && RANGE[src.id] === "zoom";
-  if (zoom) { const pad = Math.max(60, (hi - lo) * 0.08); t0 = lo - pad; t1 = Math.min(now, hi + pad); }
-  if (t1 - t0 < 600) t0 = t1 - 600;
+  if (zoom) {
+    const pad = Math.max(30, (hi - lo) * 0.08), c = (lo + hi) / 2, half = Math.max(120, (hi - lo) / 2 + pad);
+    t0 = c - half; t1 = Math.min(now, c + half);
+  } else if (t1 - t0 < 600) t0 = t1 - 600;
   const narrow = innerWidth < 600;                  // phones get fewer, wider buckets and readable text
   const want = narrow ? 20 : 40, bw = NICE.find((x) => x >= (t1 - t0) / want) || Math.ceil((t1 - t0) / want / DAY) * DAY;
   t0 = Math.floor(t0 / bw) * bw;
