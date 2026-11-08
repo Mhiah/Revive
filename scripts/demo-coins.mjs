@@ -42,6 +42,7 @@ export async function run(opts) {
     stewardKey,                       // key of a stand-in steward account (sandbox)
     lockFactory = true,
     existingFactory,                  // reuse a deployed, locked factory instead of making one
+    resumeTag,                        // continue a stopped run: skip accounts and token that already exist
     out = "demo-coins.json",
   } = opts;
 
@@ -54,7 +55,8 @@ export async function run(opts) {
   // Demo accounts share the root's key, so a run that stops halfway can be picked up again.
   const key = KeyPair.fromString(rootKey);
   const pub = key.getPublicKey().toString();
-  const tag = Date.now().toString(36).slice(-5);
+  const tag = resumeTag || Date.now().toString(36).slice(-5);
+  const exists = async (id) => { try { await new Account(id, provider).getState(); return true; } catch { return false; } };
   const sub = (p) => `${p}-${tag}.${rootId}`;
 
   const view = (contractId, method, args = {}) => provider.callFunction({ contractId, method, args });
@@ -86,13 +88,14 @@ export async function run(opts) {
   log(`Stories: ${stories.join(", ")}. Wasm bytes: coin ${coinBytes}, guard ${guardBytes}, token ${tokenBytes}, factory ${factoryBytes}`);
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
-  if (have < need) throw new Error(`Not enough NEAR on ${rootId}: has ${have}, needs about ${r2(need)}. Top it up from the testnet faucet.`);
+  if (resumeTag) log(`Resuming run ${tag}: accounts that already exist are reused`);
+  else if (have < need) throw new Error(`Not enough NEAR on ${rootId}: has ${have}, needs about ${r2(need)}. Top it up from the testnet faucet.`);
   log(`Creating demo accounts with tag ${tag}`);
   const factoryId = existingFactory || `${prefix}-${tag}.${rootId}`;
   if (!existingFactory) await root.createSubAccount({ accountOrPrefix: `${prefix}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(r2(factoryFund)) });
   const acc = {};
   for (const [n, amt] of Object.entries(names)) {
-    await root.createSubAccount({ accountOrPrefix: `${n}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(amt) });
+    if (!(resumeTag && await exists(sub(n)))) await root.createSubAccount({ accountOrPrefix: `${n}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(amt) });
     acc[n] = as(sub(n));
   }
 
@@ -101,9 +104,11 @@ export async function run(opts) {
   let stewardAcc = null;
   if (!steward) {
     // Stand-in steward: a plain account in its own namespace, nominated by suffix.
-    await root.createSubAccount({ accountOrPrefix: `stewards-${tag}`, publicKey: pub, nearToTransfer: nearToYocto("0.25") });
     const parent = as(`stewards-${tag}.${rootId}`);
-    await parent.createSubAccount({ accountOrPrefix: "ninelives", publicKey: stewardKey || pub, nearToTransfer: nearToYocto("0.1") });
+    if (!(resumeTag && await exists(parent.accountId))) {
+      await root.createSubAccount({ accountOrPrefix: `stewards-${tag}`, publicKey: pub, nearToTransfer: nearToYocto("0.25") });
+      await parent.createSubAccount({ accountOrPrefix: "ninelives", publicKey: stewardKey || pub, nearToTransfer: nearToYocto("0.1") });
+    }
     steward = `ninelives.stewards-${tag}.${rootId}`;
     suffix = `.stewards-${tag}.${rootId}`;
     stewardAcc = new Account(steward, provider, stewardKey || key.toString());
@@ -239,25 +244,31 @@ export async function run(opts) {
   // ------------------------------------- story 3: an outside token, connected
   log("Story 3: $MEME, a plain NEP-141 launched outside Revive, connected and taken over");
   const tokenId = `meme-${tag}.${rootId}`;
+  const tokenReady = resumeTag && await exists(tokenId) && (await view(tokenId, "ft_balance_of", { account_id: acc.carol.accountId })) !== "0";
+  if (!tokenReady) {
   await root.createSubAccount({ accountOrPrefix: `meme-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(r2(tokenFund)) });
   const tokenAcc = as(tokenId);
   await tokenAcc.deployContract(await readFile(tokenWasm));
   await call(tokenAcc, tokenId, "new", { owner_id: acc.dev.accountId, total_supply: tokens(1_000_000_000), name: "Meme Cooked", symbol: "MEME" });
+  }
   check((await view(tokenId, "ft_metadata")).symbol === "MEME", `outside token ${tokenId} exists, 1B $MEME owned by the dev`);
+  if (!tokenReady) {
   const reg = (await view(tokenId, "storage_balance_bounds")).min;
   for (const h of ["alice", "bob", "carol", "whale"]) await call(acc[h], tokenId, "storage_deposit", {}, reg);
   for (const [h, n] of Object.entries({ alice: 300_000_000, bob: 200_000_000, carol: 100_000_000 })) {
     await call(acc.dev, tokenId, "ft_transfer", { receiver_id: acc[h].accountId, amount: tokens(n) }, "1");
   }
+  }
   const ftCall = (who, receiver, n, msg) =>
     call(who, tokenId, "ft_transfer_call", { receiver_id: receiver, amount: tokens(n), msg }, "1", teraToGas("100"));
 
+  const guardName = existingFactory ? `meme-${tag}` : "meme";      // a reused factory may already have a "meme"
   const gcost = BigInt(await view(factoryId, "get_connect_cost"));
   log(`  connect cost ${Number(gcost / 10n ** 21n) / 1000} NEAR + 0.1 NEAR treasury`);
   const raw = await acc.dev.callFunctionRaw({
     contractId: factoryId, methodName: "connect", gas: teraToGas("300"),
     deposit: (gcost + BigInt(nearToYocto("0.1"))).toString(),
-    args: { name: "meme", config: {
+    args: { name: guardName, config: {
       token_id: tokenId, links: "https://github.com/Mhiah/Revive",
       pulse_interval_secs: timer, vote_duration_secs: timer, quorum_bps: 2000, vest_duration_secs: 86400,
       spend_cap: nearToYocto("0.1").toString(), spend_period_secs: 3600,
@@ -268,7 +279,7 @@ export async function run(opts) {
     if (r.outcome.status && r.outcome.status.Failure) console.error("  receipt failed:", r.outcome.executor_id, JSON.stringify(r.outcome.status.Failure));
     for (const l of r.outcome.logs || []) if (!l.startsWith("EVENT_JSON")) console.log("  log:", l);
   }
-  const guardId = `meme.${factoryId}`;
+  const guardId = `${guardName}.${factoryId}`;
   const g0 = await view(guardId, "get_status");
   check(g0.kind === "guard" && g0.token_id === tokenId && g0.creator === acc.dev.accountId && g0.config.symbol === "MEME",
     `connected: guard ${guardId} protects ${tokenId}; name and symbol read from the token`);
@@ -311,7 +322,7 @@ export async function run(opts) {
   }
 
   const registry = await view(factoryId, "get_coins", {});
-  check(registry.length === result.coins.length && registry.every((c) => c.kind === (c.token_id ? "guard" : "coin")), `factory registry lists ${result.coins.length} entries with their kinds`);
+  check((existingFactory ? registry.length >= result.coins.length : registry.length === result.coins.length) && registry.every((c) => c.kind === (c.token_id ? "guard" : "coin")), `factory registry lists ${result.coins.length} entries with their kinds`);
   await writeFile(out, JSON.stringify(result, null, 2));
   log("All checks passed.", JSON.stringify(result));
   return result;
@@ -348,6 +359,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     stories: (process.env.STORIES || "coins,guard").split(",").map((x) => x.trim()).filter(Boolean),
     holderNear: process.env.HOLDER_NEAR || "0.15",
     existingFactory: process.env.FACTORY || undefined,
+    resumeTag: process.env.RESUME_TAG || undefined,
     out: process.env.OUT || "demo-coins.json",
   }).catch((e) => { console.error(e); process.exit(1); });
 }

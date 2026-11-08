@@ -22,6 +22,9 @@ on:
       factory:
         description: "Reuse an existing locked factory (optional), e.g. revive-bhtat.revive.testnet"
         required: false
+      resume:
+        description: "Tag of a stopped run to continue (optional), e.g. cia7y"
+        required: false
 
 jobs:
   deploy:
@@ -73,6 +76,7 @@ jobs:
           TIMER: ${{ inputs.timer }}
           STORIES: ${{ inputs.stories }}
           FACTORY: ${{ inputs.factory }}
+          RESUME_TAG: ${{ inputs.resume }}
         run: |
           cd scripts && npm install --no-audit --no-fund && cd ..
           node scripts/demo-coins.mjs
