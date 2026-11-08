@@ -94,7 +94,7 @@ Every number is a direct RPC read. There is no indexer or backend.
 
 ```bash
 (cd contract && cargo test)   # 21 tests
-(cd factory && cargo test)    # 6 tests
+(cd factory && cargo test)    # 7 tests
 ```
 
 The coin tests cover the full lifecycle: launch, pulses, flatline, takeover,
@@ -119,7 +119,7 @@ node scripts/sandbox-e2e.mjs      # needs the two wasm files from CI or cargo ne
 
 **The same stories on testnet:** run the **testnet-demo** workflow (Actions tab)
 after adding `NEAR_ACCOUNT_ID` and `NEAR_PRIVATE_KEY` secrets for a funded
-testnet account (about 11 NEAR). It uploads `demo-coins.json` with the factory
+testnet account (about 13 NEAR). It uploads `demo-coins.json` with the factory
 and coin names. Pass an existing Sputnik DAO as `steward` to nominate a real DAO.
 
 **The app:** open `web/index.html` (demo mode), or `?factory=revive-xxxxx.you.testnet`
@@ -148,8 +148,8 @@ The site is published to GitHub Pages on every push.
 | --- | --- | --- |
 | `new(owner)` | deployer | |
 | `store_code()` | owner, once | The coin wasm as raw input. Can never change afterwards. |
-| `launch(name, config)` | anyone | Attach ≥ 1.5 NEAR (300 TGas). Creates `<name>.<factory>`; the caller becomes creator and keeper; extra NEAR seeds the treasury. Refunds if the launch fails. |
-| `get_coins`, `get_coin_count`, `get_code_hash`, `get_owner` | view | |
+| `launch(name, config)` | anyone | Attach ≥ `get_launch_cost()` (the coin's code size plus room for state, about 2.3 NEAR), with 300 TGas. Creates `<name>.<factory>`; the caller becomes creator and keeper; extra NEAR seeds the treasury. Refunds if the launch fails. |
+| `get_coins`, `get_coin_count`, `get_code_hash`, `get_launch_cost`, `get_owner` | view | |
 
 ## Limits (honest list)
 
@@ -157,7 +157,7 @@ The site is published to GitHub Pages on every push.
 * **Hold-time is not identity.** A patient attacker can buy early and wait. Revive stops *buying a vote after the death*; it does not stop someone who planned ahead.
 * **Quorum is slightly lenient.** Accounts whose tokens are mostly post-flatline count as negative in the running total, which makes the eligible total a little smaller than the sum of positive weights.
 * **Demo stewards.** Without a `steward` input, the demo workflow uses a stand-in steward account (its own namespace, nominated by suffix) instead of a Sputnik DAO, because creating a DAO costs several testnet NEAR. Real coins launched from the app require `.sputnikv2.testnet` / `.sputnik-dao.near`.
-* **Storage.** Each launch reserves 1.5 NEAR for the coin's code and state.
+* **Storage.** Each coin carries its own copy of the code, so a launch costs about 2.3 NEAR of storage. NEAR global contracts would cut that; they were left out to keep testnet costs predictable.
 * **Treasury transfers to accounts that don't exist** are refunded to the contract's balance, but not re-added to the `treasury` counter.
 * **Unaudited.** Testnet only. The wasm is built in CI; the build is not yet reproducible (`cargo near build reproducible-wasm` is the next step).
 
@@ -168,7 +168,7 @@ contract/            the coin (near-sdk 5.30)
   src/lib.rs         state, keeper, takeover, revival, views
   src/token.rs       NEP-141 / 145 / 148 and hold-time accounting
   src/tests.rs       21 unit tests
-factory/             launches coins as <name>.<factory>; 6 unit tests
+factory/             launches coins as <name>.<factory>; 7 unit tests
 web/index.html       the app: Flatline Watch, Launch, coin Monitor / Verify / Lore, demo mode
 scripts/             demo-coins.mjs (deploy + both stories), sandbox-e2e.mjs, Sputnik DAO how-to
 .github/workflows/   CI (tests, lints, wasm, sandbox e2e), Pages, testnet-demo

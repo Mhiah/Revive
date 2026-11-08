@@ -1,7 +1,7 @@
 name: testnet-demo
 
 # Run by hand (Actions → testnet-demo → Run workflow). Needs two repository
-# secrets for a funded testnet account (about 11 NEAR):
+# secrets for a funded testnet account (about 13 NEAR):
 #   NEAR_ACCOUNT_ID   e.g. revive-demo.testnet
 #   NEAR_PRIVATE_KEY  ed25519:...
 # Deploys the factory and two demo coins, plays both stories live, and

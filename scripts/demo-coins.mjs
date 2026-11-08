@@ -54,8 +54,8 @@ export async function run(opts) {
 
   // ------------------------------------------------------------ accounts
   // The factory holds its own code plus the stored coin code (~4 NEAR of storage).
-  const names = { dev: "4", alice: "0.3", bob: "0.3", carol: "0.3", whale: "0.3" };
-  const need = 5 + 4 + 4 * 0.3 + (givenSteward ? 0 : 0.5) + 0.3;
+  const names = { dev: "6", alice: "0.3", bob: "0.3", carol: "0.3", whale: "0.3" };
+  const need = 5 + 6 + 4 * 0.3 + (givenSteward ? 0 : 0.5) + 0.3;
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${need} NEAR`);
   if (have < need) throw new Error(`Not enough NEAR on ${rootId}: has ${have}, needs about ${need}. Top it up from the testnet faucet.`);
@@ -110,8 +110,10 @@ export async function run(opts) {
     const coinId = `${name}.${factoryId}`;
     const cfg = config(`${symbol === "NINE" ? "Nine Lives" : "Back From The Dead"}`, symbol);
     cfg.distributor = coinId;
+    const cost = BigInt(await view(factoryId, "get_launch_cost"));
+    log(`  launch cost ${Number(cost / 10n ** 21n) / 1000} NEAR + 0.2 NEAR treasury`);
     const raw = await acc.dev.callFunctionRaw({ contractId: factoryId, methodName: "launch", args: { name, config: cfg },
-      deposit: nearToYocto("1.7").toString(), gas: teraToGas("300") });
+      deposit: (cost + BigInt(nearToYocto("0.2"))).toString(), gas: teraToGas("300") });
     const failures = (raw.receipts_outcome || []).filter((r) => r.outcome.status && r.outcome.status.Failure);
     for (const f of failures) console.error("  receipt failed:", f.outcome.executor_id, JSON.stringify(f.outcome.status.Failure));
     for (const r of raw.receipts_outcome || []) for (const l of r.outcome.logs || []) if (!l.startsWith("EVENT_JSON")) console.log("  log:", l);

@@ -11,8 +11,8 @@ use near_sdk::store::Vector;
 use near_sdk::{env, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise};
 
 const CODE_KEY: &[u8] = b"code";
-/// Kept from every launch for the new account's storage (code + state).
-pub const STORAGE_ALLOWANCE: u128 = 1_500_000_000_000_000_000_000_000; // 1.5 NEAR
+/// Room for the coin's state on top of its code: account, config, first holders, lore.
+const STATE_BYTES: u128 = 20_000;
 const GAS_FOR_INIT: Gas = Gas::from_tgas(60);
 const GAS_FOR_CALLBACK: Gas = Gas::from_tgas(15);
 
@@ -55,8 +55,8 @@ impl Factory {
     }
 
     /// Launch a coin as `<name>.<factory>`. The caller becomes the creator and
-    /// first keeper. Attach at least 1.5 NEAR for storage; anything above that
-    /// seeds the coin's treasury.
+    /// first keeper. Attach at least `get_launch_cost()` for storage; anything
+    /// above that seeds the coin's treasury.
     #[payable]
     pub fn launch(&mut self, name: String, config: Value) -> Promise {
         require!(self.code_hash.is_some(), "the factory has no code yet");
@@ -65,8 +65,9 @@ impl Factory {
             "name must be 2-32 chars of a-z, 0-9, - or _"
         );
         let deposit = env::attached_deposit().as_yoctonear();
-        require!(deposit >= STORAGE_ALLOWANCE, "attach at least 1.5 NEAR");
-        let treasury = deposit - STORAGE_ALLOWANCE;
+        let storage = self.get_launch_cost().0;
+        require!(deposit >= storage, format!("attach at least {} yoctoNEAR (get_launch_cost)", storage));
+        let treasury = deposit - storage;
 
         let creator = env::predecessor_account_id();
         let account: AccountId = format!("{}.{}", name, env::current_account_id()).parse().unwrap_or_else(|_| env::panic_str("invalid name"));
@@ -80,7 +81,7 @@ impl Factory {
         let code = env::storage_read(CODE_KEY).unwrap();
         Promise::new(account.clone())
             .create_account()
-            .transfer(NearToken::from_yoctonear(STORAGE_ALLOWANCE))
+            .transfer(NearToken::from_yoctonear(storage))
             .deploy_contract(code)
             .function_call("new", args, NearToken::from_yoctonear(treasury), GAS_FOR_INIT)
             .then(
@@ -134,6 +135,11 @@ impl Factory {
 
     pub fn get_code_len(&self) -> u64 {
         self.code_len
+    }
+
+    /// NEAR (yocto) a launch keeps for the new coin's storage: its code plus room for state.
+    pub fn get_launch_cost(&self) -> U128 {
+        U128((self.code_len as u128 + STATE_BYTES) * env::storage_byte_cost().as_yoctonear())
     }
 }
 
@@ -210,13 +216,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "attach at least 1.5 NEAR")]
+    #[should_panic(expected = "attach at least")]
     fn launch_needs_storage_deposit() {
         ctx("mia.testnet", 0, fake_wasm());
         let mut f = Factory::new("mia.testnet".parse().unwrap());
         f.internal_store_code(fake_wasm());
-        ctx("bob.testnet", 10u128.pow(24), vec![]);
+        ctx("bob.testnet", 1, vec![]);
         let _ = f.launch("nine".into(), json!({ "name": "Nine", "symbol": "NINE" }));
+    }
+
+    #[test]
+    fn launch_cost_follows_code_size() {
+        ctx("mia.testnet", 0, vec![]);
+        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        f.internal_store_code(fake_wasm());
+        assert_eq!(f.get_launch_cost().0, (2_004 + 20_000) * env::storage_byte_cost().as_yoctonear());
     }
 
     #[test]

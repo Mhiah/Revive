@@ -400,7 +400,7 @@ async function render() {
   $("connect").textContent = DEMO ? "Demo mode" : (account ? short(account) : "Connect wallet");
   $("connect").disabled = DEMO;
   try {
-    const html = r.page === "coin" ? await coinView(r) : r.page === "launch" ? launchView() : r.page === "how" ? howView() : await watchView();
+    const html = r.page === "coin" ? await coinView(r) : r.page === "launch" ? await launchView() : r.page === "how" ? howView() : await watchView();
     if (my !== renderId) return;
     $("view").innerHTML = html;
     bind(r);
@@ -454,13 +454,15 @@ async function watchView() {
 }
 
 // ------------------------------------------------------------------ Launch
-function launchView() {
+let LAUNCH_COST = 23n * YOCTO_NEAR / 10n;          // demo default; live value from the factory
+async function launchView() {
   setAccent("alive");
+  if (!DEMO && FACTORY_ID) LAUNCH_COST = BigInt(await view(FACTORY_ID, "get_launch_cost"));
   return `
     <section class="panel full">
       <div class="label">Launch a Revive coin</div>
       <p class="hint">The factory deploys the same audited code to <b>&lt;name&gt;.${esc(FACTORY_ID || "revive.testnet")}</b>. You become the creator and first keeper.
-        Your tokens (up to 10%) stay locked and vest only while you keep pulsing. Attach 1.5 NEAR for storage; anything more seeds the treasury.</p>
+        Your tokens (up to 10%) stay locked and vest only while you keep pulsing. Launching costs ${fmtNear(LAUNCH_COST)} for the coin's storage; anything more seeds the treasury.</p>
       <form id="launch" class="stack">
         <div class="grid2">
           <label class="f"><span>Account name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" placeholder="ninelives"></label>
@@ -499,7 +501,7 @@ function readLaunch(form) {
     comeback_penalty: near(f.penalty),
     dao_suffix: NETWORK === "mainnet" ? ".sputnik-dao.near" : ".sputnikv2.testnet",
   };
-  const deposit = (BigInt(near(f.seed)) + 15n * YOCTO_NEAR / 10n).toString();
+  const deposit = (BigInt(near(f.seed)) + LAUNCH_COST).toString();
   return { name: f.name.trim(), config, deposit };
 }
 
@@ -686,7 +688,7 @@ function bind(r) {
   }
   if (r.page === "launch") {
     const form = $("launch");
-    const cost = () => { try { const { deposit } = readLaunch(form); $("cost").textContent = `You'll attach ${fmtNear(deposit)} (1.50 storage + treasury seed).`; } catch {} };
+    const cost = () => { try { const { deposit } = readLaunch(form); $("cost").textContent = `You'll attach ${fmtNear(deposit)} (${fmtNear(LAUNCH_COST)} storage + treasury seed).`; } catch {} };
     form.oninput = cost; cost();
     form.onsubmit = async (e) => {
       e.preventDefault();

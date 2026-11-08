@@ -46,7 +46,9 @@ jobs:
           (cd factory && cargo near build non-reproducible-wasm)
 
       - name: SHA-256 of the wasm (compare with the deployed code hash)
-        run: sha256sum contract/target/near/revive.wasm factory/target/near/revive_factory.wasm
+        run: |
+          sha256sum contract/target/near/revive.wasm factory/target/near/revive_factory.wasm
+          ls -l contract/target/near/revive.wasm factory/target/near/revive_factory.wasm
 
       - uses: actions/upload-artifact@v4
         with:
