@@ -302,7 +302,7 @@ async function liveActivity(id, S, lore) {
     if (hit) return withLore(hit.d, S, lore);               // keep the last good copy
     d = { calls: [], transfers: null, partial: true, from: null, source: "lore", error: e.message };
   }
-  ACT.set(id, { at: Date.now(), d });
+  ACT.set(id, { at: Date.now() - (d.error ? 150_000 : 0), d });   // a failed fetch is retried after 30s
   return withLore(d, S, lore);
 }
 // Lore is on-chain and complete: it supplies births, comebacks, takeovers and revivals.
