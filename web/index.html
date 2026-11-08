@@ -720,7 +720,9 @@ function drawEcg() {
   const c = $("ecg");
   if (!c) { ecg.running = false; return; }
   const dpr = devicePixelRatio || 1;
-  if (c.width !== c.clientWidth * dpr) { c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr; ecg.last = []; ecg.x = 0; }
+  // A refresh swaps in a new canvas: size it, but keep the trace unless the width really changed.
+  if (c.width !== c.clientWidth * dpr || c.height !== c.clientHeight * dpr) { c.width = c.clientWidth * dpr; c.height = c.clientHeight * dpr; }
+  if (ecg.W !== c.width) { ecg.W = c.width; ecg.last = []; ecg.x = 0; }
   const g = c.getContext("2d"), W = c.width, H = c.height, mid = H * 0.6;
   const status = window.__S ? window.__S.status : "alive";
   const color = getComputedStyle(document.documentElement).getPropertyValue(COLORS[status] || "--alive").trim();
