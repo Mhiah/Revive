@@ -169,6 +169,9 @@ pub struct Guard {
     staker_count: u32,
     staked_total: u128,
     sum_bal_since: u128,
+    /// Stake that arrived after the flatline, as stake * (since - flatline). Added back so the
+    /// eligible total is exact; resets to 0 on every new heartbeat (see the coin contract).
+    late_excess: u128,
     treasury: u128,
     period_start: u64,
     spent_in_period: u128,
@@ -232,6 +235,7 @@ impl Guard {
             staker_count: 0,
             staked_total: 0,
             sum_bal_since: 0,
+            late_excess: 0,
             treasury: env::attached_deposit().as_yoctonear(),
             period_start: t,
             spent_in_period: 0,
@@ -323,6 +327,7 @@ impl Guard {
         }
         self.treasury += deposit;
         self.last_pulse = t;
+        self.late_excess = 0;
         emit("pulse", json!({ "keeper": self.keeper, "next_deadline": self.flatline_at() }));
     }
 
@@ -462,6 +467,7 @@ impl Guard {
             self.dev_active = false;
         }
         self.last_pulse = t;
+        self.late_excess = 0;
         self.period_start = t;
         self.spent_in_period = 0;
         self.lives += 1;
@@ -570,7 +576,14 @@ impl Guard {
     }
 
     pub(crate) fn eligible_total(&self, f: u64) -> u128 {
-        (self.staked_total * f as u128).saturating_sub(self.sum_bal_since) / WEIGHT_SCALE
+        let all = (self.staked_total * f as u128 + self.late_excess).saturating_sub(self.sum_bal_since) / WEIGHT_SCALE;
+        // A DAO that staked before it was elected can't vote once it is keeper, so its stake
+        // is left out (the creator can never stake, so only the keeper needs this).
+        let keeper_part = match self.stakers.get(&self.keeper) {
+            Some(s) if s.since < f => s.balance * (f - s.since) as u128 / WEIGHT_SCALE,
+            _ => 0,
+        };
+        all.saturating_sub(keeper_part)
     }
 
     pub(crate) fn credit(&mut self, account: &AccountId, amount: u128, stamp: u64) {
@@ -585,6 +598,7 @@ impl Guard {
         let nb = s.balance + amount;
         let ns = (old + amount * stamp as u128).div_ceil(nb) as u64;
         self.sum_bal_since = self.sum_bal_since - old + nb * ns as u128;
+        self.late_excess = self.late_excess - self.late_part(s.balance, s.since) + self.late_part(nb, ns);
         s.balance = nb;
         s.since = ns;
         self.staked_total += amount;
@@ -595,9 +609,15 @@ impl Guard {
         let mut s = self.stakers.get(account).cloned().unwrap_or_else(|| env::panic_str("nothing staked"));
         require!(amount > 0 && s.balance >= amount, "not enough staked");
         self.sum_bal_since -= amount * s.since as u128;
+        self.late_excess -= self.late_part(amount, s.since);
         s.balance -= amount;
         self.staked_total -= amount;
         self.stakers.insert(account.clone(), s);
+    }
+
+    pub(crate) fn late_part(&self, balance: u128, since: u64) -> u128 {
+        let f = self.flatline_at();
+        if since > f { balance * (since - f) as u128 } else { 0 }
     }
 
     fn push_lore(&mut self, kind: &str, actor: &AccountId, note: String) {

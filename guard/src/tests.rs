@@ -28,6 +28,11 @@ impl W {
 }
 
 fn connect(w: &W) -> Guard {
+    // Fresh storage for every guard, so tests that build more than one don't share state.
+    w.at("dev.testnet", 0);
+    near_sdk::mock::with_mocked_blockchain(|b| {
+        let _ = b.take_storage();
+    });
     w.at("dev.testnet", 3 * NEAR);
     Guard::new(ConnectConfig {
         token_id: acc("meme.cooking.testnet"),
@@ -264,4 +269,27 @@ fn strangers_cannot_name_creator() {
         dao_suffix: ".sputnikv2.testnet".into(),
         creator: Some(acc("vitalik.testnet")),
     });
+}
+
+
+// Grouped test files (see the table in the README).
+mod attacks;
+mod money_and_time;
+mod invariants;
+
+fn panics<F: FnOnce()>(f: F) -> Option<String> {
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    r.err().map(|e| e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default())
+}
+
+/// Everyone's real voting weight at `f`, staker by staker.
+fn honest_total(g: &Guard, who: &[&str], f: u64) -> u128 {
+    who.iter().map(|a| g.weight_at(&acc(a), f)).sum()
+}
+
+/// Dev goes silent; alice opens a takeover.
+fn dead_and_open(g: &mut Guard, w: &mut W) {
+    w.t += 3 * DAY + 1;
+    w.at("alice.testnet", 0);
+    g.start_takeover(acc("meme.sputnikv2.testnet"));
 }

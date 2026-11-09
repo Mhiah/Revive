@@ -19,6 +19,11 @@ struct World {
 
 impl World {
     fn new() -> Self {
+        // Each world starts from empty storage, so tests that build several coins don't share state.
+        testing_env!(VMContextBuilder::new().build());
+        near_sdk::mock::with_mocked_blockchain(|b| {
+            let _ = b.take_storage();
+        });
         World { t: START, who: std::cell::RefCell::new("dev.testnet".into()) }
     }
     fn at(&self, who: &str, deposit: u128) {
@@ -454,4 +459,36 @@ fn strangers_cannot_name_the_creator() {
         spend_cap: U128(NEAR), spend_period_secs: DAY, comeback_penalty: U128(NEAR),
         dao_suffix: ".sputnikv2.testnet".into(), creator: Some(acc("vitalik.testnet")),
     });
+}
+
+
+// Grouped test files, each proving one kind of claim (see the table in the README).
+mod attacks;
+mod invariants;
+mod money;
+mod timing;
+
+/// Everyone's real voting weight at `f`, added up holder by holder (keeper and creator excluded).
+fn honest_total(c: &Revive, accounts: &[&str], f: u64) -> u128 {
+    accounts
+        .iter()
+        .map(|a| acc(a))
+        .filter(|a| *a != c.keeper && *a != c.creator)
+        .map(|a| c.weight_at(&a, f))
+        .sum()
+}
+
+/// Runs `f` and returns its panic message, if it panicked.
+fn panics<F: FnOnce()>(f: F) -> Option<String> {
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    r.err().map(|e| {
+        e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
+    })
+}
+
+/// Open a takeover as alice after the dev has gone silent long enough.
+fn dead_and_open(c: &mut Revive, w: &mut World) {
+    w.wait(3 * DAY + 1);
+    w.at("alice.testnet", 0);
+    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
 }

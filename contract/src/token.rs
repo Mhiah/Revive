@@ -202,6 +202,7 @@ impl Revive {
         let mut h = self.holders.get(account).cloned().unwrap_or_else(|| env::panic_str("account is not registered"));
         require!(h.balance >= amount, "not enough balance");
         self.sum_bal_since -= amount * h.since as u128;
+        self.late_excess -= self.late_part(amount, h.since);
         h.balance -= amount;
         self.circulating -= amount;
         self.holders.insert(account.clone(), h);
@@ -216,6 +217,7 @@ impl Revive {
         // Round up: rounding must never make tokens look older than they are.
         let new_since = (old + amount * stamp as u128).div_ceil(new_balance) as u64;
         self.sum_bal_since = self.sum_bal_since - old + new_balance * new_since as u128;
+        self.late_excess = self.late_excess - self.late_part(h.balance, h.since) + self.late_part(new_balance, new_since);
         h.balance = new_balance;
         h.since = new_since;
         self.circulating += amount;

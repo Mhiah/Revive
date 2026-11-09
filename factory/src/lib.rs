@@ -446,3 +446,6 @@ mod tests {
         let _ = f.launch("nine".into(), json!({ "name": "Nine", "symbol": "NINE" }));
     }
 }
+
+#[cfg(test)]
+mod tests_more;

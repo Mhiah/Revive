@@ -50,7 +50,7 @@ Open **Nine Lives** and click the story buttons in order.
 | Click **Activity** | Token transfers over time, every pulse and vote marked, flatlined stretches shaded red |
 | In the simulator, open **Meme Cooked** (tagged *connected*) | A token launched elsewhere: stake, skip time, let the whale buy and stake after the death (no vote), take it over, then **Verify** shows the guard holds every staked and sealed token |
 | Open [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) → **Nine Lives**, click steps 1–11 | The full story with no wallet: a whale's post-death vote is refused, the coin revives, the DAO pulses |
-| `cd contract && cargo test` | `21 passed` (plus `factory`: `10 passed`, `guard`: `14 passed`) |
+| `cd contract && cargo test` | `76 passed` (plus `guard`: `35 passed`, `factory`: `24 passed`): [what each group proves](#tests) |
 | `cd contract && cargo run --example simulate` | The [60-day simulation](#60-day-simulation): six scenarios' day-60 results printed; `docs/simulation.json` rewritten |
 | Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | All four stories on a local NEAR node, including connecting an outside token and a takeover by a real Sputnik DAO, every step checked (`All checks passed`) |
 | [testnet-demo run](https://github.com/Mhiah/Revive/actions/workflows/testnet-demo.yml) | The same stories on NEAR testnet, against the coins above |
@@ -178,23 +178,35 @@ back to the contract's lore and current deadline and says so.
 
 ## Run it
 
-**Unit tests (no network):**
+### Tests
+
+**135 unit tests, no network needed.** One command per contract:
 
 ```bash
-(cd contract && cargo test)   # 21 tests
-(cd factory && cargo test)    # 10 tests
-(cd guard && cargo test)      # 14 tests
+(cd contract && cargo test)   # 76 tests, ~50 s (the random histories take most of it)
+(cd guard && cargo test)      # 35 tests
+(cd factory && cargo test)    # 24 tests
 ```
 
-The coin tests cover the full lifecycle: launch, pulses, flatline, takeover,
-the whale-buys-after-death attack, double voting through a second wallet,
-comeback during a vote, blocked comeback after the vote, failed votes, quorum,
-the Sputnik-only steward rule, spend caps, two deaths and two revivals, DEX
-refunds keeping hold time, the running total matching a per-holder sum, and
-only the parent factory naming a creator. The guard tests cover locking and
-staking through `ft_on_transfer` (only from the real token, only `lock` from the
-living creator), refused stakes from the keeper and creator, unstake rollbacks,
-stake added after the death getting no vote, and the bag being sealed on revival.
+Each group proves one kind of claim:
+
+| Group | File | Tests | What it proves |
+| --- | --- | --- | --- |
+| Lifecycle | [contract/src/tests.rs](contract/src/tests.rs) | 21 | Launch, pulse, flatline, takeover, revival, comeback, two deaths and two revivals, DEX refunds keep hold time, only the factory names a creator |
+| Attacks | [contract/src/tests/attacks.rs](contract/src/tests/attacks.rs) | 19 | Buying after the death neither votes nor moves the quorum; splitting or hopping wallets adds no weight; no double votes; the creator can't vote, start a takeover or move locked tokens; lookalike DAO names are refused |
+| Timing | [contract/src/tests/timing.rs](contract/src/tests/timing.rs) | 12 | The exact second each deadline flips: pulse due, vote closing, finalizing, a last-second comeback; ties fail; takeovers back to back; a revival restarts the clock |
+| Money | [contract/src/tests/money.rs](contract/src/tests/money.rs) | 21 | Spending exactly the cap, one yocto over, the reset; vesting is linear and never overpays; a revival burns only what wasn't claimed; supply always adds up |
+| Random histories | [contract/src/tests/invariants.rs](contract/src/tests/invariants.rs) | 3 | About 7,000 seeded random steps (transfers, pulses, comebacks, claims, spends, takeovers, votes). After every step: balances add up to supply, the quorum total equals a holder-by-holder sum, no weight beats its ceiling, the treasury matches every deposit and spend |
+| Connected coins | [guard/src/tests.rs](guard/src/tests.rs) and [guard/src/tests/](guard/src/tests) | 35 | Lock and stake only through the real token; late stake buys no vote and doesn't move the quorum; a DAO that staked before its election doesn't inflate the next quorum; failed unstakes and claims roll back; random histories where the guard always holds exactly what it owes |
+| Factory | [factory/src/lib.rs](factory/src/lib.rs) and [factory/src/tests_more.rs](factory/src/tests_more.rs) | 24 | Code stored once and never changed; failed launches and connects are refunded and not listed; names and deposits are checked; the registry pages correctly |
+
+**Two bugs these tests found, both fixed:** the quorum's yardstick (the total weight from before the death)
+used a running sum that subtracted weight for tokens moved after the death. Heavy trading after a death
+could push it to zero, so any single "yes" met the quorum. In the guard, a DAO that had staked before it
+was elected kept its stake in that yardstick after winning, though it can't vote. The regression tests
+are `eligible_total_ignores_tokens_bought_after_the_death`,
+`late_stake_does_not_shrink_the_eligible_total` and
+`a_dao_that_staked_before_its_election_does_not_inflate_the_next_quorum`.
 
 **End-to-end on a real NEAR node:** CI starts a local NEAR sandbox and runs
 [scripts/demo-coins.mjs](scripts/demo-coins.mjs): it deploys the factory, stores

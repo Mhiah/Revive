@@ -157,6 +157,11 @@ pub struct Revive {
     /// Sum over holders of balance * since. Lets the contract total everyone's
     /// token-seconds without looping: sum(balance * (t - since)) = circulating * t - this.
     sum_bal_since: u128,
+    /// Sum over holders whose tokens arrived after the flatline of balance * (since - flatline).
+    /// The running sum above counts those as negative weight; adding this back makes the
+    /// eligible total exact. It can only be non-zero while the coin is dead, and resets to 0
+    /// whenever the coin gets a new heartbeat (every since is then before the new deadline).
+    late_excess: u128,
     creator: AccountId,
     keeper: AccountId,
     launched_at: u64,
@@ -240,6 +245,7 @@ impl Revive {
             circulating: liquid,
             holders,
             sum_bal_since: liquid * t as u128,
+            late_excess: 0,
             creator: creator.clone(),
             keeper: creator.clone(),
             launched_at: t,
@@ -292,6 +298,7 @@ impl Revive {
         }
         self.treasury += deposit;
         self.last_pulse = t;
+        self.late_excess = 0;
         revive_event("pulse", json!({ "keeper": self.keeper, "next_deadline": self.flatline_at() }));
     }
 
@@ -437,6 +444,7 @@ impl Revive {
             }
         }
         self.last_pulse = t;
+        self.late_excess = 0;
         self.period_start = t;
         self.spent_in_period = 0;
         self.lives += 1;
@@ -557,12 +565,18 @@ impl Revive {
     /// Everyone's token-seconds before `f`, minus the keeper's and creator's.
     /// Uses the running sum, so it costs the same with 10 holders or 10 million.
     fn eligible_total(&self, f: u64) -> u128 {
-        let all = (self.circulating * f as u128).saturating_sub(self.sum_bal_since) / WEIGHT_SCALE;
+        let all = (self.circulating * f as u128 + self.late_excess).saturating_sub(self.sum_bal_since) / WEIGHT_SCALE;
         let mut excluded = self.weight_at(&self.keeper, f);
         if self.creator != self.keeper {
             excluded += self.weight_at(&self.creator, f);
         }
         all.saturating_sub(excluded)
+    }
+
+    /// How far a holding sits after the flatline, in token-seconds (0 if it arrived before).
+    pub(crate) fn late_part(&self, balance: u128, since: u64) -> u128 {
+        let f = self.flatline_at();
+        if since > f { balance * (since - f) as u128 } else { 0 }
     }
 
     fn push_lore(&mut self, kind: &str, actor: &AccountId, note: String) {
