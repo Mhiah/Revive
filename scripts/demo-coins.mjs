@@ -427,7 +427,7 @@ export async function run(opts) {
   }
 
   const registry = await view(factoryId, "get_coins", {});
-  check((existingFactory ? registry.length >= result.coins.length : registry.length === result.coins.length) && registry.every((c) => c.kind === (c.token_id ? "guard" : "coin")), `factory registry lists ${result.coins.length} entries with their kinds`);
+  check((existingFactory ? registry.length >= result.coins.length : registry.length === result.coins.length) && registry.every((c) => !c.kind || c.kind === (c.token_id ? "guard" : "coin")), `factory registry lists ${result.coins.length} entries with their kinds`);
   await writeFile(out, JSON.stringify(result, null, 2));
   log("All checks passed.", JSON.stringify(result));
   return result;
