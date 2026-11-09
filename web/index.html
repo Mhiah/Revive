@@ -1167,7 +1167,7 @@ function bind(r) {
     };
     on("b-stake", () => tokenAct(() => src.send(amt("stake-amt"), "stake"), "Staked. It starts counting now."));
     on("b-unstake", () => tokenAct(() => src.call("unstake", { amount: amt("stake-amt") }, "0", TGAS100), "Unstaked back to your wallet."));
-    on("b-lock", () => tokenAct(() => src.send(amt("lock-amt"), "lock"), "Bag locked in the guard."));
+    on("b-lock", () => tokenAct(() => src.send(amt("lock-amt"), "lock"), "Tokens locked in the guard."));
     on("b-max", () => { const b = $("b-max"); $("stake-amt").value = formatUnits(BigInt(b.dataset.w) > 0n ? b.dataset.w : b.dataset.s); });
     document.querySelectorAll("[data-skip]").forEach((b) => b.onclick = () => { CLOCK.t += Number(b.dataset.skip); render(); });
     document.querySelectorAll("[data-buy]").forEach((b) => b.onclick = () => {
@@ -1200,7 +1200,7 @@ function bind(r) {
         const { name, config, deposit } = readConnect(form);
         try {
           const id = await REG.connect(name, config, deposit);
-          toast(`$${CONNECT.info.meta.symbol} connected. Lock your bag next.`);
+          toast(`$${CONNECT.info.meta.symbol} connected. Lock your tokens next.`);
           CONNECT.token = ""; CONNECT.info = null;
           location.hash = `#/coin/${encodeURIComponent(typeof id === "string" ? id : `${name}.${CONNECT_FACTORY}`)}`;
         } catch (err) { toast(String(err.message || err), true); }
