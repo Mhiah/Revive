@@ -140,7 +140,7 @@ under a mocked NEAR runtime with a moving clock. 12 holders, daily buys and tips
 every other day until they don't. Parameters: 1B supply, 10% creator allocation vesting over 90 days,
 3-day pulse, 1-day vote, 20% quorum, 2 NEAR comeback penalty.
 
-![Six scenarios over 60 days: alive, flatlined and voting days](docs/simulation.png)
+![Supply over 60 days in six scenarios, with alive, voting and flatlined days marked under each line](docs/simulation.png)
 
 | Scenario | Day 60 | Lives | Supply | Creator tokens burned | Treasury |
 | --- | --- | --- | --- | --- | --- |
@@ -155,6 +155,42 @@ What it shows: supply only ever falls, and only by the creator's *unvested* toke
 (the 7.2M the dev vested while alive stay theirs). A whale arriving after the death changes nothing. A comeback is
 possible but costs the dev, and the penalty stays with holders. Each extra life costs nothing to supply.
 Full day-by-day data: [docs/simulation.json](docs/simulation.json).
+
+### Picking the parameters
+
+The same run then sweeps the two settings that matter most, again on the real contract
+(`sweeps` in [docs/simulation.json](docs/simulation.json)).
+
+**Quorum.** Each row is a revival vote where only some holders turn up. "Yes" is their share of the
+eligible (pre-death, hold-time weighted) total.
+
+| Who votes yes | Their weight | 10% quorum | 20% quorum | 35% quorum |
+| --- | --- | --- | --- | --- |
+| The 2 smallest holders | 0.9% | fails | fails | fails |
+| 3 mid-size holders (a quarter of holders) | 8.2% | fails | fails | fails |
+| Half of holders | 17.6% | **passes** | fails | fails |
+
+**Heartbeat.** A keeper who remembers to pulse on half of all days, over 60 days, 20 runs each.
+
+| Pulse every | Accidental deaths | Days spent dead by accident | Holders wait after a real quit |
+| --- | --- | --- | --- |
+| 1 day | 15.4 | 31.4 | 1 day |
+| 3 days | 4.2 | 8.6 | 3 days |
+| 7 days | 0.4 | 0.6 | 7 days |
+
+What we picked:
+
+* **Quorum 10% for most coins.** A handful of small or mid-size wallets can't take a coin over, but
+  half of the real holders can. At 20% even half of holders fail, because tokens in pools and in
+  wallets that never vote still count in the total. Raise it only for coins with few, active holders.
+* **7-day pulse for a keeper who pulses by hand**: under one accidental death in 60 days, and holders
+  wait a week at most. **3 days when a bot pulses**, like [$HERE](#revive), which pulses twice a day
+  from a scheduled workflow, so missed days aren't a risk and holders wait less.
+* **1-day vote, 2 NEAR comeback penalty** stay as in the scenarios: long enough to vote, and a
+  comeback costs the dev something that stays with holders.
+
+Both are fixed at launch; nobody can change them later. The scenarios above use 20% so the attack
+cases are tested against a stricter bar.
 
 ## The app
 
@@ -282,8 +318,10 @@ The site is published to GitHub Pages on every push.
 * **Off-chain assets don't move.** The contract can't take over the dev's X account, Telegram or website. Revive moves what lives on-chain: the keeper role, treasury, links, metadata icon and the dev's tokens. Takeover teams may also face IP questions about the original art ([Decrypt](https://decrypt.co/247781/meme-coin-takeover-teams-face-legal-entanglement-experts-say)).
 * **Connected coins only count stake.** Tokens sitting in wallets or pools don't vote; holders have to stake, and the guard can't see who held before connecting. A sealed bag leaves circulation for good, but the token's `ft_total_supply` doesn't drop, because only the token can burn. And the guard can't stop powers the token itself grants, such as an owner who can still mint.
 * **Hold-time is not identity.** A patient attacker can buy early and wait. Revive stops *buying a vote after the death*; it does not stop someone who planned ahead.
-* **Quorum is slightly lenient.** Accounts whose tokens are mostly post-flatline count as negative in the running total, which makes the eligible total a little smaller than the sum of positive weights.
-* **Demo stewards.** Without a `steward` input, the demo workflow uses a stand-in steward account (its own namespace, nominated by suffix) instead of a Sputnik DAO, because creating a DAO costs several testnet NEAR. Real coins launched from the app require `.sputnikv2.testnet` / `.sputnik-dao.near`.
+* **Pools count but never vote.** Tokens in a liquidity pool held before the death count toward the eligible total, but a pool can't vote. That's why we recommend a 10% quorum (see [Picking the parameters](#picking-the-parameters)).
+* **Earlier testnet coins keep an older quorum count.** Coins from the first two factories (`revive-ztw7t`, `revive-bhtat`) count tokens bought after the death as slightly negative, which makes their quorum a little lenient. Our tests found it; coins from the current factory count exactly.
+* **Demo stewards.** The quick demo stories use a stand-in steward account instead of a Sputnik DAO, because a DAO costs about 5.6 testnet NEAR. The [$CIVIC](#revive) story uses a real Sputnik DAO, and coins launched from the app require `.sputnikv2.testnet` / `.sputnik-dao.near`.
+* **meme.cooking untested.** Connect works with any NEP-141 token and was tested on our own plain token; we haven't run it against a real meme.cooking token yet.
 * **Storage.** Each coin carries its own copy of the code, so a launch costs about 2.5 NEAR of storage. NEAR global contracts would cut that; they were left out to keep testnet costs predictable.
 * **Treasury transfers to accounts that don't exist** are refunded to the contract's balance, but not re-added to the `treasury` counter.
 * **Unaudited.** Testnet only. The wasm is built in CI; the build is not yet reproducible (`cargo near build reproducible-wasm` is the next step).

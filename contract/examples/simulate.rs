@@ -53,7 +53,15 @@ impl Sim {
     }
 
     fn new() -> Self {
+        Self::with_params(2_000, 3 * DAY)
+    }
+
+    fn with_params(quorum_bps: u16, pulse_interval_secs: u64) -> Self {
         ctx(START, "dev", 5 * NEAR);
+        // Every simulated coin starts from empty storage, like a freshly deployed contract.
+        near_sdk::mock::with_mocked_blockchain(|b| {
+            let _ = b.take_storage();
+        });
         let c = Revive::new(LaunchConfig {
             name: "Nine Lives".into(),
             symbol: "NINE".into(),
@@ -62,9 +70,9 @@ impl Sim {
             total_supply: U128(1_000_000_000 * TOKEN),
             dev_allocation: U128(100_000_000 * TOKEN),
             distributor: acc("pool"),
-            pulse_interval_secs: 3 * DAY,
+            pulse_interval_secs,
             vote_duration_secs: DAY,
-            quorum_bps: 2_000,
+            quorum_bps,
             vest_duration_secs: 90 * DAY,
             spend_cap: U128(NEAR),
             spend_period_secs: 7 * DAY,
@@ -276,6 +284,60 @@ fn run(p: &Plan) -> Value {
     json!({ "id": p.id, "name": p.name, "blurb": p.blurb, "days": s.days, "events": s.events })
 }
 
+/// Quorum test: the dev launches and vanishes; only some holders show up to vote yes.
+/// Does the takeover pass at this quorum?
+fn quorum_case(quorum_bps: u16, voters: &'static [usize], label: &'static str) -> Value {
+    let mut s = Sim::with_params(quorum_bps, 3 * DAY);
+    s.t = START + 4 * DAY;
+    let proposer = HOLDERS[voters[0]].0;
+    let _ = s.try_call(proposer, 0, |c| { c.start_takeover("ninelives-1.sputnikv2.testnet".parse().unwrap()); });
+    for &i in voters {
+        let _ = s.try_call(HOLDERS[i].0, 0, |c| { c.vote(true); });
+    }
+    s.at("observer", 0);
+    let tk = s.c.get_status().takeover.unwrap();
+    let yes_pct = tk.yes.0 as f64 * 100.0 / tk.total_eligible.0 as f64;
+    s.t += DAY;
+    s.at("anyone", 0);
+    let passed = s.c.finalize_takeover();
+    json!({ "quorum_pct": quorum_bps / 100, "voters": label, "yes_pct": (yes_pct * 10.0).round() / 10.0, "passed": passed })
+}
+
+/// Heartbeat test: a loyal but irregular dev pulses on about half of all days, for 60 days.
+/// How often does the coin flatline by accident, and how long would holders wait after a real quit?
+fn heartbeat_case(interval_days: u64) -> Value {
+    let mut deaths = 0u32;
+    let mut dead_days = 0u32;
+    let runs = 20u64;
+    for seed in 0..runs {
+        let mut s = Sim::with_params(2_000, interval_days * DAY);
+        s.rng = 1_000 + seed;
+        let mut was_dead = false;
+        for day in 1..=DAYS {
+            s.t = START + day * DAY + 12 * HOUR;
+            s.at("observer", 0);
+            let dead = s.c.get_status().status != "alive";
+            if dead {
+                dead_days += 1;
+                if !was_dead {
+                    deaths += 1;
+                }
+            }
+            was_dead = dead;
+            if s.rand(2) == 0 {
+                let _ = s.pulse("dev", if dead { 2 * NEAR } else { 0 });
+                was_dead = false;
+            }
+        }
+    }
+    json!({
+        "interval_days": interval_days,
+        "accidental_deaths_per_60_days": deaths as f64 / runs as f64,
+        "accidental_dead_days_per_60_days": dead_days as f64 / runs as f64,
+        "days_holders_wait_after_a_real_quit": interval_days,
+    })
+}
+
 fn main() {
     std::panic::set_hook(Box::new(|_| {}));
     let plans = [
@@ -292,6 +354,19 @@ fn main() {
         Plan { id: "rejected", name: "Holders vote no", blurb: "The dev goes silent, a takeover opens, but most of the weight votes no. The coin stays dead.",
             dev_quits: Some(12), whale_buys_after_death: false, comeback: false, yes_share: 0.2, dao_quits: None },
     ];
+    // Picking the parameters: the same contract under different quorums and heartbeats.
+    let groups: [(&'static [usize], &'static str); 3] = [
+        (&[10, 11], "the 2 smallest holders"),
+        (&[3, 4, 5], "3 mid-size holders (a quarter of holders)"),
+        (&[0, 2, 4, 6, 8, 10], "half of holders"),
+    ];
+    let mut quorum_sweep = vec![];
+    for q in [1_000u16, 2_000, 3_500] {
+        for (v, l) in groups {
+            quorum_sweep.push(std::thread::spawn(move || quorum_case(q, v, l)).join().unwrap());
+        }
+    }
+    let heartbeat_sweep: Vec<Value> = [1u64, 3, 7].into_iter().map(|d| std::thread::spawn(move || heartbeat_case(d)).join().unwrap()).collect();
     let out = json!({
         "generated_by": "contract/examples/simulate.rs (the real Revive contract, mocked clock)",
         "params": {
@@ -301,6 +376,8 @@ fn main() {
         },
         // Each scenario runs on its own thread: the mocked chain storage is per thread.
         "scenarios": plans.into_iter().map(|p| std::thread::spawn(move || run(&p)).join().unwrap()).collect::<Vec<_>>(),
+        // Picking the parameters: the same contract under different quorums and heartbeats.
+        "sweeps": { "quorum": quorum_sweep, "heartbeat": heartbeat_sweep },
     });
     let path = std::env::args().nth(1).unwrap_or_else(|| "../docs/simulation.json".into());
     std::fs::write(&path, near_sdk::serde_json::to_string_pretty(&out).unwrap()).unwrap();
@@ -308,6 +385,12 @@ fn main() {
         let last = sc["days"].as_array().unwrap().last().unwrap();
         println!("{:<28} supply {:>13}  treasury {:>6.2}  lives {}  status {}", sc["name"].as_str().unwrap(),
             last["supply"], last["treasury"].as_f64().unwrap(), last["lives"], last["status"]);
+    }
+    for q in out["sweeps"]["quorum"].as_array().unwrap() {
+        println!("quorum {:>2}%  {:<44} yes {:>5}%  passed {}", q["quorum_pct"], q["voters"].as_str().unwrap(), q["yes_pct"], q["passed"]);
+    }
+    for h in out["sweeps"]["heartbeat"].as_array().unwrap() {
+        println!("heartbeat {} days: {} accidental deaths, {} dead days per 60 days", h["interval_days"], h["accidental_deaths_per_60_days"], h["accidental_dead_days_per_60_days"]);
     }
     println!("wrote {path}");
 }
