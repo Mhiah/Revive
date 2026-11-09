@@ -394,18 +394,25 @@ export async function run(opts) {
 
   // The DAO runs the coin: every action is a proposal its council votes on.
   const bond = policy.proposal_bond;
-  async function daoDoes(description, method, args, gas) {
+  async function daoDoes(description, method, args, gas, deposit = "0") {
     const kind = { FunctionCall: { receiver_id: civic, actions: [{
-      method_name: method, args: Buffer.from(JSON.stringify(args)).toString("base64"), deposit: "0", gas: teraToGas(gas).toString() }] } };
+      method_name: method, args: Buffer.from(JSON.stringify(args)).toString("base64"), deposit, gas: teraToGas(gas).toString() }] } };
     await call(acc.alice, daoId, "add_proposal", { proposal: { description, kind } }, bond, teraToGas("50"));
     const id = (await view(daoId, "get_last_proposal_id")) - 1;
     await call(acc.alice, daoId, "act_proposal", { id, action: "VoteApprove", proposal: kind }, "0", teraToGas("100"));
     await call(acc.bob, daoId, "act_proposal", { id, action: "VoteApprove", proposal: kind }, "0", teraToGas("150"));
     return (await view(daoId, "get_proposal", { id })).status;
   }
-  const before = (await view(civic, "get_status")).last_pulse;
+  const s4 = await view(civic, "get_status");
+  const before = s4.last_pulse;
+  // If the coin has gone flat again by the time the DAO votes, its pulse is a comeback and must pay
+  // the penalty into the treasury, so the proposal attaches it. The DAO is sent the NEAR to pay it.
+  const late = s4.now > s4.flatline_at - 40;
+  const penalty = late ? s4.config.comeback_penalty : "0";
+  if (late) await root.transfer({ receiverId: daoId, amount: (BigInt(penalty) + BigInt(nearToYocto("0.1"))).toString() });
   await sleep(2);
-  const st1 = await daoDoes("Pulse $CIVIC: the community keeps it alive", "pulse", {}, "30");
+  const st1 = await daoDoes(late ? "Bring $CIVIC back: pay the comeback penalty and pulse" : "Pulse $CIVIC: the community keeps it alive",
+    "pulse", {}, "30", penalty);
   const c2 = await view(civic, "get_status");
   check(st1 === "Approved" && c2.last_pulse > before && c2.status === "alive", "DAO proposal approved by alice and bob: the DAO pulsed $CIVIC");
   const carolBefore = BigInt((await new Account(acc.carol.accountId, provider).getBalance()));
