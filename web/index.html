@@ -52,10 +52,20 @@
   @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } .hero h1 { font-size: 32px; } }
   .stat .v { font-family: var(--mono); font-size: 24px; font-weight: 700; margin-top: 4px; }
   .coins { display: grid; gap: 8px; margin-top: 14px; }
-  .coinrow { display: grid; grid-template-columns: 14px 1.4fr 1fr 1fr .7fr; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line);
-    border-radius: 8px; text-decoration: none; color: var(--text); background: #0a0e10; }
+  .coinrow, .coinhead { display: grid; grid-template-columns: 14px minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.3fr) minmax(0,.8fr); align-items: center; gap: 14px; padding: 14px 16px; }
+  .coinrow { border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text); background: #0a0e10; }
   .coinrow:hover { border-color: var(--c); }
-  @media (max-width: 700px) { .coinrow { grid-template-columns: 14px 1fr 1fr; } .coinrow .hide-sm { display: none; } }
+  .coinhead { padding-top: 0; padding-bottom: 0; font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
+  .shelf { display: grid; gap: 6px; font-family: var(--mono); font-size: 13px; }
+  .shelf .bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .shelf .bar i { display: block; height: 100%; border-radius: 2px; background: var(--c); }
+  .trend { font-family: var(--mono); font-size: 13px; color: var(--t); white-space: nowrap; }
+  .trend b { font-size: 12px; margin-right: 6px; }
+  @media (max-width: 700px) {
+    .coinrow, .coinhead { grid-template-columns: 14px minmax(0,1.4fr) minmax(0,1.2fr) minmax(0,.8fr); gap: 10px; padding-left: 12px; padding-right: 12px; }
+    .hide-sm { display: none !important; }
+    .coinrow .tag { display: table; margin: 4px 0 0; }
+    .trend b { font-size: 15px; margin: 0; } }
   .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 10px var(--c); }
   .dot.beat { animation: beat 1s infinite; }
   @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.5); } 30% { transform: scale(1); } }
@@ -650,15 +660,26 @@ async function watchView() {
   const dead = live.filter((r) => r.s.status === "flatlined").length;
   const votes = live.filter((r) => r.s.takeover).length;
   const lives = live.reduce((n, r) => n + r.s.lives, 0);
+  // Shelf life: how much of the current pulse window is left (or how long it's been gone).
+  // Trend: ▲ healthy, ▼ fading (under a quarter of the window left), dead, or in a takeover vote.
   const row = ({ c, s }) => {
-    if (!s) return `<div class="coinrow" style="--c:var(--dim)"><span class="dot"></span><span>${esc(c.account_id)}</span><span class="chip">unreachable</span></div>`;
-    const dl = s.status === "alive" ? `pulse due in ${fmtDur(s.flatline_at - s.now)}` : s.takeover ? (s.status === "vote_closed" ? "vote closed — finalize" : `vote ends in ${fmtDur(s.takeover.ends_at - s.now)}`) : `dead for ${fmtDur(s.now - s.flatline_at)} — take it over`;
+    if (!s) return `<div class="coinrow" style="--c:var(--dim)"><span class="dot"></span><span>${esc(c.account_id)}</span><span class="chip hide-sm">unreachable</span><span>—</span><span>—</span></div>`;
+    const iv = s.config.pulse_interval_secs, left = s.flatline_at - s.now, frac = Math.max(0, Math.min(1, left / iv));
+    const shelf = s.status === "alive" ? `${fmtDur(left)} left`
+      : s.status === "voting" ? `vote ends in ${fmtDur(s.takeover.ends_at - s.now)}`
+      : s.status === "vote_closed" ? "vote closed" : `expired ${fmtDur(s.now - s.flatline_at)} ago`;
+    const [tri, word, col] = s.status === "alive" ? (frac >= 0.25 ? ["▲", "healthy", "--alive"] : ["▼", "fading", "--vote"])
+      : s.takeover ? ["▼", "in a vote", "--vote"] : ["▼", "dead", "--dead"];
+    // The bar: time left in the pulse window, or in the takeover vote; empty once dead.
+    const barFrac = s.status === "alive" ? frac : s.status === "voting"
+      ? Math.max(0, Math.min(1, (s.takeover.ends_at - s.now) / s.config.vote_duration_secs)) : 0;
+    const livesNote = s.lives ? `${s.lives} ${s.lives === 1 ? "life" : "lives"} restored` : "never revived";
     return `<a class="coinrow" href="#/coin/${encodeURIComponent(c.account_id)}" style="--c:var(${COLORS[s.status]})">
       <span class="dot ${s.status === "alive" ? "beat" : ""}"></span>
       <span><b>${esc(s.config.name)}</b><small>$${esc(s.config.symbol)}</small>${s.kind === "guard" ? `<small class="tag">connected</small>` : ""}</span>
-      <span class="chip">${LABEL[s.status]}</span>
-      <span class="mono hide-sm">${dl}</span>
-      <span class="mono hide-sm lives" title="lives">${s.lives ? "♥".repeat(Math.min(s.lives, 9)) : "—"}</span></a>`;
+      <span class="hide-sm"><span class="chip">${LABEL[s.status]}</span></span>
+      <span class="shelf">${esc(shelf)}<span class="bar"><i style="width:${(barFrac * 100).toFixed(1)}%"></i></span></span>
+      <span class="trend" style="--t:var(${col})" title="${word} · ${livesNote}"><b>${tri}</b><span class="hide-sm">${word}</span></span></a>`;
   };
   return `
     <section class="panel full hero">
@@ -677,7 +698,8 @@ async function watchView() {
     </section>
     <section class="panel full">
       ${ph("Flatline Watch", "Open takeovers first, then dead coins, then the coins closest to death.")}
-      <div class="coins">${rows.length ? rows.map(row).join("") : `<div class="empty">No coins yet. <a href="#/launch">Launch the first one.</a></div>`}</div>
+      <div class="coins">${rows.length ? `<div class="coinhead"><span></span><span>Coin</span><span class="hide-sm">Pulse</span><span>Shelf life</span><span>Trend</span></div>`
+        + rows.map(row).join("") : `<div class="empty">No coins yet. <a href="#/launch">Launch the first one.</a></div>`}</div>
     </section>`;
 }
 
