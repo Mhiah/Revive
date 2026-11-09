@@ -60,7 +60,8 @@ jobs:
           sudo apt-get install -yq binaryen >/dev/null
           for w in contract/target/near/revive.wasm factory/target/near/revive_factory.wasm guard/target/near/revive_guard.wasm samples/plain-token/target/near/plain_token.wasm; do
             before=$(stat -c%s $w)
-            wasm-opt -Oz --strip-debug --strip-producers $w -o $w.opt && mv $w.opt $w
+            # Only a size optimisation: if this wasm-opt can't read the compiler's output, keep the original.
+            if wasm-opt -Oz --strip-debug --strip-producers $w -o $w.opt 2>/dev/null; then mv $w.opt $w; else echo "wasm-opt skipped for $w"; fi
             echo "$w: $before -> $(stat -c%s $w) bytes"
           done
           sha256sum contract/target/near/revive.wasm factory/target/near/revive_factory.wasm guard/target/near/revive_guard.wasm samples/plain-token/target/near/plain_token.wasm
