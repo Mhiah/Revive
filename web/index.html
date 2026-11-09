@@ -74,8 +74,8 @@
   input, select { font-family: var(--font-body); font-size: 15px; background: var(--color-white); color: var(--text); border: 1px solid var(--line);
     padding: 10px 12px; border-radius: 8px; width: 100%; }
   input::placeholder { color: #94A3B8; }
-  label.f { display: grid; gap: 6px; font-size: 14px; }
-  label.f span { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .02em; text-transform: uppercase; color: var(--dim); }
+  label.f, div.f { display: grid; gap: 6px; font-size: 14px; }
+  label.f span, div.f > span { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: .02em; text-transform: uppercase; color: var(--dim); }
 
   /* Layout and cards */
   main { padding: 24px; display: grid; gap: 20px; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
@@ -122,7 +122,13 @@
     .coinrow, .coinhead { grid-template-columns: 14px minmax(0,1.4fr) minmax(0,1.2fr) minmax(0,.8fr); gap: 10px; padding-left: 8px; padding-right: 8px; }
     .hide-sm { display: none !important; }
     .coinrow .tag { display: table; margin: 4px 0 0; }
-    .trend b { font-size: 15px; margin: 0; } }
+    .trend b { font-size: 15px; margin: 0; }
+    /* Phones: the status dot becomes a ring around the coin image, and the ticker sits under the name. */
+    .coinrow, .coinhead { grid-template-columns: minmax(0,1.5fr) minmax(0,1.2fr) minmax(0,.6fr); }
+    .coinrow > .dot, .coinhead > span:first-child { display: none; }
+    .coinrow .ci { box-shadow: 0 0 0 2px var(--color-white), 0 0 0 4px var(--c); }
+    .nm > span:last-child { min-width: 0; }
+    .coinrow .nm small:not(.tag) { display: block; margin: 2px 0 0; } }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 16%, transparent); }
   .dot.beat { animation: beat 1s infinite; }
   @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.35); } 30% { transform: scale(1); } }
@@ -135,6 +141,17 @@
   /* Coin page */
   .monitor { position: relative; overflow: hidden; }
   .monitor-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  .ci { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex: none; display: inline-grid; place-items: center;
+    background: var(--color-light-blue, #EFF6FF); color: var(--color-primary, #2563EB); border: 1px solid var(--line);
+    font: 700 15px var(--font-head); text-transform: uppercase; }
+  .ci.lg { width: 56px; height: 56px; font-size: 22px; }
+  .nm { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .coinid { display: flex; align-items: center; gap: 16px; }
+  .up { display: flex; align-items: center; gap: 16px; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; background: var(--color-background-secondary); }
+  .upr { display: grid; gap: 6px; min-width: 0; }
+  .up .hint { margin: 0; }
+  .up .pick { justify-self: start; }
+  @media (max-width: 700px) { .ci { width: 30px; height: 30px; font-size: 13px; } .nm { gap: 9px; } .ci.lg { width: 48px; height: 48px; } }
   .coin { font-size: 30px; font-weight: 700; letter-spacing: -.03em; line-height: 1.15; }
   .coin small { font-family: var(--font-mono); color: var(--dim); font-size: 14px; font-weight: 500; letter-spacing: 0; margin-left: 8px; }
   .status { font-family: var(--font-mono); font-weight: 600; font-size: 34px; letter-spacing: .02em; color: var(--accent); }
@@ -238,6 +255,35 @@ const EARLIER_FACTORIES = ["revive-ztw7t.revive.testnet", "revive-bhtat.revive.t
 const FACTORY_ID = params.get("factory") || DEFAULT_FACTORY;
 const CONNECT_FACTORY = params.get("connect") || DEFAULT_CONNECT;
 const FACTORIES = [...new Set([FACTORY_ID, CONNECT_FACTORY, ...(params.has("factory") ? [] : EARLIER_FACTORIES)].filter(Boolean))];
+// Left off Flatline Watch: a second Civic Heart from a run that stopped before its DAO acted
+// (civic-vft8z is the full story). It stays on-chain and opens by direct link.
+const HIDDEN = new Set(["civic-v8k08.revive-ztw7t.revive.testnet"]);
+// Coin images live in the coin itself (NEP-148 icon), as a small data URL.
+const ICON_MAX = 4000;                                      // characters; keeps the coin's storage small
+const safeIcon = (u) => typeof u === "string" && (/^data:image\/(png|jpe?g|webp|gif|svg\+xml)[;,]/i.test(u) || /^https:\/\//i.test(u)) ? u : null;
+function iconHtml(icon, symbol, big = false) {
+  const u = safeIcon(icon), cls = big ? "ci lg" : "ci";
+  return u ? `<img class="${cls}" src="${esc(u)}" alt="">` : `<span class="${cls}" aria-hidden="true">${esc((symbol || "?").slice(0, 1))}</span>`;
+}
+// Square-crops and shrinks an uploaded image until its data URL fits ICON_MAX.
+async function shrinkIcon(file) {
+  if (!file || !/^image\//.test(file.type)) throw new Error("pick a PNG, JPG, WebP or GIF image");
+  const bmp = await createImageBitmap(file), side = Math.min(bmp.width, bmp.height);
+  for (const px of [96, 80, 64, 48]) for (const q of [0.85, 0.7, 0.55]) {
+    const c = document.createElement("canvas"); c.width = c.height = px;
+    c.getContext("2d").drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, px, px);
+    let u = c.toDataURL("image/webp", q);
+    if (!u.startsWith("data:image/webp")) u = c.toDataURL("image/jpeg", q);
+    if (u.length <= ICON_MAX) return u;
+  }
+  throw new Error("that image is too detailed to fit; try a simpler one");
+}
+let ICON_DATA = null;                                        // image picked on the Launch form or keeper panel
+const TOKEN_ICONS = new Map();                               // connected tokens' own icons
+async function tokenIcon(token) {
+  if (!TOKEN_ICONS.has(token)) TOKEN_ICONS.set(token, view(token, "ft_metadata").then((m) => m?.icon || null).catch(() => null));
+  return TOKEN_ICONS.get(token);
+}
 const LEGACY_COIN = params.get("contract");                 // old single-coin links
 const DEMO = params.has("demo") || (!FACTORY_ID && !LEGACY_COIN);
 const RPCS = NETWORK === "mainnet"
@@ -353,7 +399,7 @@ const liveRegistry = {
         }
       }
     }));
-    return lists.flat();
+    return lists.flat().filter((c) => !HIDDEN.has(c.account_id));
   },
   async launch(name, config, deposit) { return sendTx(FACTORY_ID, "launch", { name, config }, deposit, TGAS300); },
   async connect(name, config, deposit) { return sendTx(CONNECT_FACTORY, "connect", { name, config }, deposit, TGAS300); },
@@ -569,7 +615,7 @@ class Mock {
     return { kind: "coin", status: this.st(), now: this.t, keeper: this.keeper, creator: this.creator, lives: this.lives, launched_at: this.born, last_pulse: this.lastPulse,
       flatline_at: this.flatlineAt(), total_supply: this.supply.toString(), circulating: circ.toString(), treasury: this.treasury.toString(),
       dev_locked: this.devLocked.toString(), dev_burned: this.devBurned.toString(), takeover: this.takeover && { ...this.takeover },
-      takeover_count: this.count, config: this.cfg, links: REPO };
+      takeover_count: this.count, config: this.cfg, icon: this.icon || null, links: REPO };
   }
   async lore() { return this.loreList.slice(-100); }
   async weight(a) { if (a === this.keeper || a === this.creator) return "0"; return this.w(a, this.takeover ? this.takeover.flatline_at : this.flatlineAt()).toString(); }
@@ -578,6 +624,7 @@ class Mock {
   async call(method, args = {}, deposit = "0") {
     const by = this.me();
     if (method === "pulse") return this.pulse(by, BigInt(deposit));
+    if (method === "set_links") { if (by !== this.keeper) this.fail("only the keeper can change the links"); this.icon = args.icon; return; }
     if (method === "start_takeover") return this.startTakeover(by, args.steward);
     if (method === "vote") return this.vote(by, args.support);
     if (method === "finalize_takeover") { const ok = this.finalize(); if (ok) revivedFx(); return ok; }
@@ -679,7 +726,7 @@ const demoRegistry = {
     const id = `${name}.revive.testnet`;
     if (MOCKS.some((m) => m.id === id)) throw new Error("a coin with that name already exists");
     const m = new Mock({ id, name: config.name, symbol: config.symbol, interval: config.pulse_interval_secs });
-    m.creator = m.keeper = "you.testnet"; MOCKS.push(m); return id;
+    m.creator = m.keeper = "you.testnet"; m.icon = config.icon || null; MOCKS.push(m); return id;
   },
   coin: (id) => MOCKS.find((m) => m.id === id),
 };
@@ -753,7 +800,11 @@ async function watchView() {
   }
   WATCH_LAST = coins;
   const rows = await Promise.all(coins.map(async (c) => {
-    try { return { c, s: await REG.coin(c.account_id).status() }; } catch { return { c, s: null }; }
+    try {
+      const s = await REG.coin(c.account_id).status();
+      if (s.kind === "guard" && !DEMO && !s.icon) s.icon = await tokenIcon(s.token_id);
+      return { c, s };
+    } catch { return { c, s: null }; }
   }));
   const rank = { voting: 0, vote_closed: 0, flatlined: 1, alive: 2 };
   rows.sort((x, y) => !x.s ? 1 : !y.s ? -1 : (rank[x.s.status] - rank[y.s.status]) ||
@@ -778,7 +829,7 @@ async function watchView() {
     const livesNote = s.lives ? `${s.lives} ${s.lives === 1 ? "life" : "lives"} restored` : "never revived";
     return `<a class="coinrow" href="#/coin/${encodeURIComponent(c.account_id)}" style="--c:var(${COLORS[s.status]})">
       <span class="dot ${s.status === "alive" ? "beat" : ""}"></span>
-      <span><b>${esc(s.config.name)}</b><small>$${esc(s.config.symbol)}</small>${s.kind === "guard" ? `<small class="tag">connected</small>` : ""}</span>
+      <span class="nm">${iconHtml(s.icon, s.config.symbol)}<span><b>${esc(s.config.name)}</b><small>$${esc(s.config.symbol)}</small>${s.kind === "guard" ? `<small class="tag">connected</small>` : ""}</span></span>
       <span class="hide-sm"><span class="chip">${LABEL[s.status]}</span></span>
       <span class="shelf">${esc(shelf)}<span class="bar"><i style="width:${(barFrac * 100).toFixed(1)}%"></i></span></span>
       <span class="trend" style="--t:var(${col})" title="${word} · ${livesNote}"><b>${tri}</b><span class="hide-sm">${word}</span></span></a>`;
@@ -812,6 +863,11 @@ async function launchView() {
         Launching costs ${fmtNear(LAUNCH_COST)} for storage; anything you add on top goes to the treasury.`)}
       <form id="launch" class="stack">
         <div class="grid2">
+          <div class="f" style="grid-column:1/-1"><span>Coin image (optional)</span>
+            <div class="up"><span id="icon-prev">${iconHtml(ICON_DATA, "?", true)}</span>
+              <div class="upr"><button type="button" class="pick">${ICON_DATA ? "Change image" : "Upload image"}</button>
+              <p class="hint" id="icon-note">PNG, JPG, WebP or GIF. Cropped square, shrunk to 96×96 and stored inside the coin, so wallets and explorers show it.</p></div>
+              <input type="file" id="icon-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></div></div>
           <label class="f"><span>Account name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" placeholder="ninelives" data-addr="${esc(FACTORY_ID || "revive.testnet")}">
             <small class="addr"></small></label>
           <label class="f"><span>Coin name</span><input name="cname" required placeholder="Nine Lives"></label>
@@ -819,9 +875,9 @@ async function launchView() {
           <label class="f"><span>Total supply (tokens)</span><input name="supply" type="number" min="1" max="1000000000" value="1000000000"></label>
           <label class="f"><span>Your locked share (% , max 10)</span><input name="dev" type="number" min="0" max="10" step="0.5" value="10"></label>
           <label class="f"><span>Vesting (days)</span><input name="vest" type="number" min="0" value="180"></label>
-          <label class="f"><span>Pulse every (hours)</span><input name="pulse" type="number" min="0.02" step="0.01" value="72"></label>
+          <label class="f"><span>Pulse every (hours)</span><input name="pulse" type="number" min="0.02" step="0.01" value="168"></label>
           <label class="f"><span>Takeover vote length (hours)</span><input name="vote" type="number" min="0.02" step="0.01" value="24"></label>
-          <label class="f"><span>Quorum (% of eligible weight)</span><input name="quorum" type="number" min="1" max="100" value="20"></label>
+          <label class="f"><span>Quorum (% of eligible weight)</span><input name="quorum" type="number" min="1" max="100" value="10"></label>
           <label class="f"><span>Comeback penalty (NEAR)</span><input name="penalty" type="number" min="0" step="0.1" value="2"></label>
           <label class="f"><span>Treasury spend cap per week (NEAR)</span><input name="cap" type="number" min="0" step="0.1" value="1"></label>
           <label class="f"><span>Seed the treasury with (NEAR)</span><input name="seed" type="number" min="0" step="0.1" value="1"></label>
@@ -837,7 +893,7 @@ function readLaunch(form) {
   const supply = BigInt(Math.floor(Number(f.supply)));
   const near = (x) => (BigInt(Math.round(Number(x) * 1e6)) * YOCTO_NEAR / 1_000_000n).toString();
   const config = {
-    name: f.cname.trim(), symbol: f.symbol.trim().toUpperCase(), icon: null, links: f.links.trim() || null,
+    name: f.cname.trim(), symbol: f.symbol.trim().toUpperCase(), icon: ICON_DATA, links: f.links.trim() || null,
     total_supply: (supply * YOCTO_TOKEN).toString(),
     dev_allocation: (supply * YOCTO_TOKEN * BigInt(Math.round(Number(f.dev) * 100)) / 10000n).toString(),
     distributor: `${f.name}.${FACTORY_ID || "revive.testnet"}`,
@@ -886,7 +942,7 @@ async function connectView() {
         <div class="grid2">
           <label class="f"><span>Guard name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" value="${esc(t.meta.symbol.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}" data-addr="${esc(CONNECT_FACTORY || "revive.testnet")}">
             <small class="addr"></small></label>
-          <label class="f"><span>Pulse every (hours)</span><input name="pulse" type="number" min="0.02" step="0.01" value="72"></label>
+          <label class="f"><span>Pulse every (hours)</span><input name="pulse" type="number" min="0.02" step="0.01" value="168"></label>
           <label class="f"><span>Takeover vote length (hours)</span><input name="vote" type="number" min="0.02" step="0.01" value="24"></label>
           <label class="f"><span>Quorum (% of eligible stake)</span><input name="quorum" type="number" min="1" max="100" value="20"></label>
           <label class="f"><span>Your tokens vest over (days)</span><input name="vest" type="number" min="0" value="180"></label>
@@ -947,6 +1003,7 @@ async function coinView(r) {
   const src = REG.coin(r.id);
   if (!src) throw new Error("unknown coin " + r.id);
   const S = await src.status();
+  if (S.kind === "guard" && !DEMO && !S.icon) S.icon = await tokenIcon(S.token_id);
   window.__S = S;
   DEC = S.config.decimals ?? 18;
   const guard = S.kind === "guard";
@@ -958,9 +1015,9 @@ async function coinView(r) {
     <section class="panel full monitor">
       <div class="flash" id="flash"></div>
       <div class="monitor-top">
-        <div><div class="label">Coin · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a>${guard
+        <div class="coinid">${iconHtml(S.icon, S.config.symbol, true)}<div><div class="label">Coin · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a>${guard
             ? ` · token <a href="${EXPLORER}/token/${esc(S.token_id)}" target="_blank" rel="noopener">${esc(short(S.token_id))}</a>` : ""}</div>
-          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small>${guard ? `<small class="tag">connected</small>` : ""}</div></div>
+          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small>${guard ? `<small class="tag">connected</small>` : ""}</div></div></div>
         <div style="text-align:right"><div class="label">Status</div>
           <div class="status ${S.status === "flatlined" ? "blink" : ""}">${LABEL[S.status]}</div></div>
       </div>
@@ -1032,6 +1089,11 @@ async function keeperPanel(src, S) {
       <input id="lock-amt" inputmode="decimal" placeholder="amount of $${esc(S.config.symbol)}">
       <button id="b-lock">Lock in the guard</button>
       <span class="hint">Locked tokens vest to you while you keep pulsing. If holders take over, whatever is still locked stays sealed.</span></div>` : ""}
+    ${isKeeper && !guard && !dead ? `<div class="stack" style="margin-top:18px"><div class="label">Coin image</div>
+      <div class="up"><span id="icon-prev">${iconHtml(S.icon, S.config.symbol, true)}</span>
+        <div class="upr"><div class="actions" style="margin-top:0"><button type="button" class="pick">Choose image</button><button class="primary" id="b-icon" disabled>Save image</button></div>
+        <p class="hint" id="icon-note">Only the keeper can change it, and only while the coin is alive. A DAO keeper changes it by proposal.</p></div>
+        <input type="file" id="icon-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden></div></div>` : ""}
   </section>`;
 }
 
@@ -1270,6 +1332,17 @@ const STORY = [
 // ================================================================ actions
 function bind(r) {
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  const fileIn = $("icon-file");
+  document.querySelectorAll(".pick").forEach((b) => b.onclick = () => fileIn && fileIn.click());
+  if (fileIn) fileIn.onchange = async () => {
+    try {
+      ICON_DATA = await shrinkIcon(fileIn.files[0]);
+      $("icon-prev").innerHTML = iconHtml(ICON_DATA, "?", true);
+      $("icon-note").textContent = `Ready: ${Math.round(ICON_DATA.length / 100) / 10} KB, stored on-chain with the coin.`;
+      if ($("b-icon")) $("b-icon").disabled = false;
+      document.querySelectorAll(".pick").forEach((b) => b.textContent = "Change image");
+    } catch (e) { ICON_DATA = null; toast(e.message, true); }
+  };
   if (r.page === "coin") {
     const src = REG.coin(r.id), S = window.__S;
     const act = async (method, args, deposit, ok) => {
@@ -1277,6 +1350,7 @@ function bind(r) {
       catch (e) { toast(String(e.message || e).replace(/^.*Smart contract panicked: /, ""), true); }
       await render();
     };
+    on("b-icon", () => { if (ICON_DATA) act("set_links", { icon: ICON_DATA, links: S.links ?? null }, "0", "Image updated."); ICON_DATA = null; });
     on("b-pulse", () => { const late = $("b-pulse").dataset.late; act("pulse", {}, late ? S.config.comeback_penalty : "0", late ? "Back from the dead. Penalty paid to the treasury." : "Pulse sent. Still alive."); });
     on("b-start", () => act("start_takeover", { steward: $("steward").value.trim() }, "0", "Takeover opened. Holders, vote."));
     on("b-yes", () => act("vote", { support: true }, "0", "Voted YES."));
@@ -1342,7 +1416,7 @@ function bind(r) {
       const { name, config, deposit } = readLaunch(form);
       try {
         const id = await REG.launch(name, config, deposit);
-        toast(`${config.symbol} launched.`);
+        toast(`${config.symbol} launched.`); ICON_DATA = null;
         location.hash = `#/coin/${encodeURIComponent(typeof id === "string" ? id : `${name}.${FACTORY_ID}`)}`;
       } catch (err) { toast(String(err.message || err), true); }
     };
