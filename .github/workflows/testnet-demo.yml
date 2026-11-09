@@ -17,7 +17,7 @@ on:
         description: "Pulse interval and vote length in seconds (min 60)"
         default: "60"
       stories:
-        description: "coins = $NINE and $BACK, guard = connect an outside $MEME token, dao = a real Sputnik DAO takes over $CIVIC"
+        description: "coins = $NINE and $BACK, guard = connect an outside $MEME token, dao = a real Sputnik DAO takes over $CIVIC, alive = $HERE with a 3-day heartbeat"
         default: "guard"
       factory:
         description: "Reuse an existing locked factory (optional), e.g. revive-bhtat.revive.testnet"

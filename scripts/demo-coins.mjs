@@ -6,7 +6,9 @@
 //   $MEME  — a plain NEP-141 launched outside Revive is connected: the dev locks
 //            their bag, holders stake, the dev goes silent, a whale stakes after
 //            the death and gets no vote, holders take over, the bag is sealed.
-// STORIES=coins,guard picks which run (default both).
+//   $CIVIC — a real Sputnik DAO takes over, then pulses and pays from the treasury by proposal.
+//   $HERE  — a coin that stays alive: a 3-day heartbeat, pulsed by the keep-alive workflow.
+// STORIES=coins,guard,dao,alive picks which run (default coins,guard).
 //
 // Testnet (from the repo root, after building both wasm files):
 //   NEAR_ACCOUNT_ID=you.testnet NEAR_PRIVATE_KEY=ed25519:... node scripts/demo-coins.mjs
@@ -74,10 +76,12 @@ export async function run(opts) {
   // ------------------------------------------------------------ accounts
   // Fund each account with what it needs: storage is 1 NEAR per 100 KB.
   const want = (x) => stories.includes(x);
-  const needCoin = want("coins") || want("dao");
+  const needCoin = want("coins") || want("dao") || want("alive");
+  // A fresh factory for the site stores both codes, so it can launch and connect.
+  const needGuard = want("guard") || (want("alive") && !existingFactory);
   const size = async (f) => (await readFile(f)).length;
   const coinBytes = needCoin ? await size(coinWasm) : 0;
-  const guardBytes = want("guard") ? await size(guardWasm) : 0;
+  const guardBytes = needGuard ? await size(guardWasm) : 0;
   const tokenBytes = want("guard") ? await size(tokenWasm) : 0;
   const factoryBytes = await size(factoryWasm);
   const perByte = 1e-5;                                         // NEAR per byte
@@ -85,7 +89,7 @@ export async function run(opts) {
   const connectCost = (guardBytes + 10_000) * perByte + 0.00125; // matches get_connect_cost
   const factoryFund = existingFactory ? 0 : (factoryBytes + coinBytes + guardBytes + 4_000) * perByte + 0.3;
   const devFund = (want("coins") ? 2 * (launchCost + 0.1) + 0.2 : 0) + (want("guard") ? connectCost + 0.1 + 0.2 : 0)
-    + (want("dao") ? launchCost + 0.2 + 0.2 : 0) + 0.3;
+    + (want("dao") ? launchCost + 0.2 + 0.2 : 0) + (want("alive") ? launchCost + 0.2 + 0.2 : 0) + 0.3;
   const daoFund = want("dao") ? Number(daoDeposit) + (sputnikFactory ? 0 : 0.3) : 0;
   const tokenFund = want("guard") ? (tokenBytes + 4_000) * perByte + 0.3 : 0;
   const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
@@ -130,7 +134,7 @@ export async function run(opts) {
     log(`Reusing factory ${factoryId}`);
     if (needCoin) codeHash = await view(factoryId, "get_code_hash");
     if (want("guard")) guardHash = await view(factoryId, "get_guard_code_hash");
-    check((!needCoin || codeHash) && (!want("guard") || guardHash), "the existing factory has the code these stories need");
+    check((!needCoin || codeHash) && (!needGuard || guardHash), "the existing factory has the code these stories need");
   } else {
   log(`Deploying factory ${factoryId}`);
   const factory = as(factoryId);
@@ -141,7 +145,7 @@ export async function run(opts) {
     codeHash = await view(factoryId, "get_code_hash");
     check(!!codeHash, `factory stored the coin code (hash ${codeHash})`);
   }
-  if (want("guard")) {
+  if (needGuard) {
     await root.callFunction({ contractId: factoryId, methodName: "store_guard_code", args: new Uint8Array(await readFile(guardWasm)), gas: teraToGas("300") });
     guardHash = await view(factoryId, "get_guard_code_hash");
     check(!!guardHash, `factory stored the guard code (hash ${guardHash})`);
@@ -162,9 +166,9 @@ export async function run(opts) {
     comeback_penalty: nearToYocto("0.2").toString(), dao_suffix: suffix,
   });
 
-  async function launch(name, symbol, display, sfx = suffix) {
+  async function launch(name, symbol, display, sfx = suffix, overrides = {}) {
     const coinId = `${name}.${factoryId}`;
-    const cfg = config(display || (symbol === "NINE" ? "Nine Lives" : "Back From The Dead"), symbol);
+    const cfg = { ...config(display || (symbol === "NINE" ? "Nine Lives" : "Back From The Dead"), symbol), ...overrides };
     cfg.dao_suffix = sfx;
     cfg.distributor = coinId;
     const cost = BigInt(await view(factoryId, "get_launch_cost"));
@@ -424,6 +428,21 @@ export async function run(opts) {
     "a council member alone cannot spend: only the DAO, by vote");
   result.coins.push(civic);
   result.dao = daoId;
+  }
+
+  if (want("alive")) {
+  // ------------------------------------------- story 5: a coin that stays alive
+  log("Story 5: $HERE stays alive: a 3-day heartbeat, pulsed by the keep-alive workflow");
+  const hereName = existingFactory ? `here-${tag}` : "here";
+  const sfx5 = sputnikFactory ? `.${sputnikFactory}` : suffix;
+  const here = await launch(hereName, "HERE", "Still Here", sfx5, {
+    pulse_interval_secs: 3 * 86400, vote_duration_secs: 86400, vest_duration_secs: 180 * 86400,
+    spend_cap: nearToYocto("1").toString(), spend_period_secs: 7 * 86400, comeback_penalty: nearToYocto("2").toString(),
+  });
+  const h = await view(here, "get_status");
+  check(h.status === "alive" && h.flatline_at - h.now > 3 * 86400 - 120, `$HERE is alive with ${Math.round((h.flatline_at - h.now) / 3600)}h until its deadline`);
+  result.coins.push(here);
+  result.alive = { coin: here, keeper: acc.dev.accountId };
   }
 
   const registry = await view(factoryId, "get_coins", {});

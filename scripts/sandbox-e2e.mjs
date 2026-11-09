@@ -11,7 +11,7 @@ try {
     rootId: DEFAULT_ACCOUNT_ID,
     rootKey: DEFAULT_PRIVATE_KEY,
     timer: 60,
-    stories: ["coins", "guard", "dao"],
+    stories: ["coins", "guard", "dao", "alive"],
     out: "sandbox-result.json",
   });
 } catch (e) {
