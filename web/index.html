@@ -20,10 +20,13 @@
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 24px; border-bottom: 1px solid var(--line); }
   .brand { font-family: var(--mono); font-weight: 800; letter-spacing: .2em; color: var(--text); text-decoration: none; }
   .brand span { color: var(--accent, var(--alive)); }
-  nav { display: flex; gap: 4px; }
-  nav a { font-family: var(--mono); font-size: 13px; color: var(--dim); text-decoration: none; padding: 8px 12px; border-radius: 6px; }
+  nav { display: flex; gap: 28px; }
+  nav a { font-family: var(--mono); font-size: 13px; color: var(--dim); text-decoration: none; padding: 8px 14px; border-radius: 6px; white-space: nowrap; }
   nav a.on, nav a:hover { color: var(--text); background: var(--panel); }
-  .net { font-family: var(--mono); font-size: 12px; color: var(--dim); margin-right: 10px; }
+  .me { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .guide { font-family: var(--mono); font-size: 11px; color: var(--dim); text-decoration: underline; text-underline-offset: 3px; }
+  .guide:hover, .guide.on { color: var(--text); }
+  @media (max-width: 720px) { nav { gap: 6px; } nav a { padding: 8px 10px; } .me { align-items: flex-start; } }
   button { font-family: var(--mono); font-size: 13px; font-weight: 600; background: transparent; color: var(--text);
     border: 1px solid var(--line); padding: 10px 14px; border-radius: 6px; cursor: pointer; }
   button:hover:not(:disabled) { border-color: var(--accent, var(--alive)); color: var(--accent, var(--alive)); }
@@ -133,9 +136,8 @@
     <a href="#/" data-nav="watch">Flatline Watch</a>
     <a href="#/launch" data-nav="launch">Launch</a>
     <a href="#/connect" data-nav="connect">Connect a coin</a>
-    <a href="#/how" data-nav="how">How it works</a>
   </nav>
-  <div><span class="net" id="net"></span><button id="connect">Connect wallet</button></div>
+  <div class="me"><button id="connect">Connect wallet</button><a href="#/how" class="guide" data-nav="how">User guide</a></div>
 </header>
 <main id="view"></main>
 <div class="toast" id="toast"></div>
@@ -615,8 +617,7 @@ function route() {
 let renderId = 0;
 async function render() {
   const r = route(), my = ++renderId;
-  document.querySelectorAll("nav a").forEach((n) => n.classList.toggle("on", n.dataset.nav === r.page));
-  $("net").textContent = DEMO ? "DEMO · simulated" : `${NETWORK}${FACTORY_ID ? " · " + short(FACTORY_ID) : ""}`;
+  document.querySelectorAll("[data-nav]").forEach((n) => n.classList.toggle("on", n.dataset.nav === r.page));
   $("connect").textContent = DEMO ? "Demo mode" : (account ? short(account) : "Connect wallet");
   $("connect").disabled = DEMO;
   try {
@@ -664,8 +665,7 @@ async function watchView() {
         A passed vote burns the creator's locked allocation, hands over the treasury and metadata, and increments the coin's lives.</p>
       <p style="margin-top:12px">${DEMO
         ? `You're in the simulator. <a href="./">See the live coins on NEAR testnet</a>.`
-        : `Live on NEAR testnet. No wallet? <a href="?demo">Play the full story in the simulator</a>.`}
-        Coin already launched somewhere else? <a href="#/connect">Connect it</a>.</p>
+        : `Live on NEAR testnet. No wallet? <a href="?demo">Play the full story in the simulator</a>.`}</p>
       <div class="stats">
         <div class="stat"><div class="label">Coins</div><div class="v">${live.length}</div></div>
         <div class="stat"><div class="label">Flatlined now</div><div class="v" style="color:var(--dead)">${dead}</div></div>
@@ -802,7 +802,7 @@ function howView() {
   setAccent("alive");
   return `
     <section class="panel full">
-      <div class="label">How Revive works</div>
+      <div class="label">User guide</div>
       <div class="steps-how">
         <div><b>Pulse.</b> The keeper (first the creator) must send an on-chain pulse before every deadline. On time, it's free.</div>
         <div><b>Flatline.</b> Miss the deadline and the coin flatlines. The keeper can no longer spend the treasury, claim tokens or change links.</div>
