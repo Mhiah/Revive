@@ -1,0 +1,28 @@
+# Keeps $HERE alive on testnet: its keeper pulses twice a day, well inside its 3-day
+# heartbeat, so even a late or skipped scheduled run never lets it flatline.
+# Uses the same NEAR_ACCOUNT_ID / NEAR_PRIVATE_KEY secrets as testnet-demo.
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "41 5,17 * * *"
+  workflow_dispatch:
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: cd scripts && npm install --no-audit --no-fund
+      - name: Pulse $HERE
+        env:
+          NEAR_ACCOUNT_ID: ${{ secrets.NEAR_ACCOUNT_ID }}
+          NEAR_PRIVATE_KEY: ${{ secrets.NEAR_PRIVATE_KEY }}
+          COIN: here.revive-6tx39.revive.testnet
+          KEEPER: dev-6tx39.revive.testnet
+        run: node scripts/pulse.mjs
