@@ -37,7 +37,7 @@
     padding: 10px; border-radius: 6px; width: 100%; }
   label.f { display: grid; gap: 6px; font-size: 13px; }
   label.f span { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+  main { padding: 24px; display: grid; gap: 18px; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
   @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); padding: 16px; } }
   .full { grid-column: 1 / -1; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
@@ -878,7 +878,7 @@ async function coinView(r) {
   if (r.tab === "verify") return head + await verifyPanel(src, S);
   if (r.tab === "activity") return head + await activityPanel(src, S);
   if (r.tab === "lore") return head + await lorePanel(src, true);
-  return head + await takeoverPanel(src, S) + await keeperPanel(src, S) + (guard ? await stakePanel(src, S) : "") + await lorePanel(src, false)
+  return head + await takeoverPanel(src, S) + await keeperPanel(src, S) + (guard ? await stakePanel(src, S) : "") + await lorePanel(src, !guard)
     + await activityPanel(src, S) + directorPanel(r.id);
 }
 
@@ -1011,7 +1011,8 @@ async function activityPanel(src, S) {
     t0 = c - half; t1 = Math.min(now, c + half);
   } else if (t1 - t0 < 600) t0 = t1 - 600;
   const narrow = innerWidth < 600;                  // phones get fewer, wider buckets and readable text
-  const want = narrow ? 20 : 40, bw = NICE.find((x) => x >= (t1 - t0) / want) || Math.ceil((t1 - t0) / want / DAY) * DAY;
+  const W = narrow ? 360 : Math.max(720, Math.min(1600, Math.round(innerWidth - 100)));
+  const want = narrow ? 20 : Math.round(W / 18), bw = NICE.find((x) => x >= (t1 - t0) / want) || Math.ceil((t1 - t0) / want / DAY) * DAY;
   t0 = Math.floor(t0 / bw) * bw;
   const N = Math.ceil((t1 - t0) / bw), span = N * bw;
   const buckets = Array.from({ length: N }, (_, i) => ({ a: t0 + i * bw, b: t0 + (i + 1) * bw, n: 0, vol: 0n, ev: {} }));
@@ -1021,7 +1022,7 @@ async function activityPanel(src, S) {
   for (const e of evs) { const b = buckets[bi(e.t)]; b.ev[e.kind] = (b.ev[e.kind] || 0) + 1; }
   // Without the indexer, on-time pulses are unknown, so only the current death is drawn.
   const zones = A.source === "lore" ? (S.now > S.flatline_at ? [[Math.max(S.flatline_at, t0), t1]] : []) : deadZones(evs, S, t0, t1, zoom ? t0 : A.from ?? 0);
-  const W = narrow ? 360 : 720, H = narrow ? 230 : 236, L = narrow ? 30 : 40, R = W - 8, top = 46, base = 196;
+  const H = narrow ? 230 : 236, L = narrow ? 30 : 40, R = W - 8, top = 46, base = 196;
   const X = (t) => L + (t - t0) / span * (R - L);
   const max = Math.max(1, ...buckets.map((b) => b.n));
   const step = max <= 4 ? 1 : max <= 10 ? 2 : max <= 25 ? 5 : max <= 50 ? 10 : Math.ceil(max / 5 / 10) * 10;
