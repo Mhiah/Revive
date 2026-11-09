@@ -24,6 +24,10 @@ Connecting a token launched elsewhere runs through a second locked factory,
 
 * [`meme-cia7y.revive-bhtat.revive.testnet`](https://testnet.nearblocks.io/address/meme-cia7y.revive-bhtat.revive.testnet) guards the plain NEP-141 [`meme-cia7y.revive.testnet`](https://testnet.nearblocks.io/address/meme-cia7y.revive.testnet): the dev locked 100M, holders staked, the dev went silent, a whale's post-death stake got no vote, holders took over and the dev's 100M is sealed in the guard. (`meme.revive-bhtat.revive.testnet` is from a run that stopped halfway; its demo accounts' keys were discarded, so it stays flatlined.)
 
+The testnet coins nominate stand-in steward accounts to save test NEAR (a Sputnik DAO costs about 5.6 NEAR to create); the
+**Verify** tab labels them as stand-ins. The real-DAO takeover is proven by the $CIVIC story in CI, and
+`STORIES=dao` runs it on testnet.
+
 All stories were played by the [testnet-demo workflow](.github/workflows/testnet-demo.yml) with 60-second timers,
 so both coins have since flatlined again: anyone holding from before can open a takeover.
 
@@ -45,7 +49,7 @@ Open **Nine Lives** and click the story buttons in order.
 | Open [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) → **Nine Lives**, click steps 1–11 | The full story with no wallet: a whale's post-death vote is refused, the coin revives, the DAO pulses |
 | `cd contract && cargo test` | `21 passed` (plus `factory`: `10 passed`, `guard`: `14 passed`) |
 | `cd contract && cargo run --example simulate` | The [60-day simulation](#60-day-simulation): six scenarios' day-60 results printed; `docs/simulation.json` rewritten |
-| Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | All three stories on a local NEAR node, including connecting an outside token, every step checked (`All checks passed`) |
+| Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | All four stories on a local NEAR node, including connecting an outside token and a takeover by a real Sputnik DAO, every step checked (`All checks passed`) |
 | [testnet-demo run](https://github.com/Mhiah/Revive/actions/workflows/testnet-demo.yml) | The same stories on NEAR testnet, against the coins above |
 
 ## Why
@@ -191,12 +195,13 @@ stake added after the death getting no vote, and the bag being sealed on revival
 
 **End-to-end on a real NEAR node:** CI starts a local NEAR sandbox and runs
 [scripts/demo-coins.mjs](scripts/demo-coins.mjs): it deploys the factory, stores
-the code, deletes the factory's key, launches two coins, connects an outside
-token and plays three stories with real wasm and a real clock, checking every step:
+the code, deletes the factory's key, launches three coins, connects an outside
+token and plays four stories with real wasm and a real clock, checking every step:
 
 * **$NINE**: the dev goes silent, a whale buys 250M after the death and is refused a vote, holders vote a steward in, the coin revives, 100M creator tokens burn, the old dev can no longer pulse, the steward pulses.
 * **$BACK**: the dev goes silent, a takeover opens, a late pulse without the penalty is refused, the dev pays the 0.2 NEAR penalty, the vote is cancelled and the penalty lands in the treasury.
 * **$MEME**: a plain NEP-141 ([samples/plain-token](samples/plain-token), no Revive code) is connected. The factory reads its name from the token and registers the guard. The dev locks 100M, holders stake 600M, the dev goes silent, a whale stakes 250M after the death and gets weight 0, holders take over, the 100M bag is sealed, the token confirms the guard holds exactly staked + sealed, and a holder unstakes back to their wallet.
+* **$CIVIC**: the takeover goes to a **real Sputnik DAO**, running the exact contract code testnet DAOs run (fetched from testnet). $CIVIC accepts only Sputnik DAOs. After the revival the old dev can't pulse; the DAO pulses $CIVIC through a proposal its council approves, then pays a contributor 0.05 NEAR from the coin's treasury the same way. A council member acting alone can't spend.
 
 ```bash
 cd scripts && npm install && cd ..
