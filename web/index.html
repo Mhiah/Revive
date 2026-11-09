@@ -41,6 +41,9 @@
   @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); padding: 16px; } }
   .full { grid-column: 1 / -1; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  .ph { margin-bottom: 16px; }
+  .ph h2 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  .ph p { margin: 4px 0 0; color: var(--dim); font-size: 14px; line-height: 1.5; max-width: 760px; }
   .label { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
   .hero h1 { font-size: 44px; line-height: 1.05; margin: 6px 0 10px; }
   .hero h1 em { font-style: normal; color: var(--alive); }
@@ -201,6 +204,7 @@ function formatUnits(raw, dec = DEC) {
   const b = BigInt(raw), d = 10n ** BigInt(dec), f = (b % d).toString().padStart(dec, "0").replace(/0+$/, "");
   return (b / d).toString() + (f ? "." + f : "");
 }
+const ph = (title, sub = "") => `<div class="ph"><h2>${title}</h2>${sub ? `<p>${sub}</p>` : ""}</div>`;
 const short = (a) => a && a.length > 30 ? a.slice(0, 13) + "…" + a.slice(-13) : a;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 function toast(msg, err = false) {
@@ -660,12 +664,10 @@ async function watchView() {
     <section class="panel full hero">
       <div class="label">NEP-141 · Sputnik DAO · NEAR</div>
       <h1>Community takeover, <em>onchain.</em></h1>
-      <p>A CTO enforced by the token contract. The keeper posts a heartbeat every interval.
-        Miss it and the coin flatlines: holders vote a Sputnik DAO in as keeper, weighted by token-seconds held before the flatline.
-        A passed vote burns the creator's locked allocation, hands over the treasury and metadata, and increments the coin's lives.</p>
-      <p style="margin-top:12px">${DEMO
-        ? `You're in the simulator. <a href="./">See the live coins on NEAR testnet</a>.`
-        : `Live on NEAR testnet. No wallet? <a href="?demo">Play the full story in the simulator</a>.`}</p>
+      <p>The dev keeps the coin alive by posting a heartbeat on-chain. If the heartbeat stops, the coin flatlines
+        and holders can vote a DAO in to take over. If the vote passes, the dev's locked tokens are burned,
+        the treasury moves to the DAO and the coin gains a life. Only tokens held before the flatline can vote.</p>
+      ${DEMO ? `<p style="margin-top:12px">You're in the simulator. <a href="./">See the live coins on NEAR testnet</a>.</p>` : ""}
       <div class="stats">
         <div class="stat"><div class="label">Coins</div><div class="v">${live.length}</div></div>
         <div class="stat"><div class="label">Flatlined now</div><div class="v" style="color:var(--dead)">${dead}</div></div>
@@ -674,7 +676,7 @@ async function watchView() {
       </div>
     </section>
     <section class="panel full">
-      <div class="label">Flatline Watch — open takeovers first, then the dead, then whoever is closest to death</div>
+      ${ph("Flatline Watch", "Open takeovers first, then dead coins, then the coins closest to death.")}
       <div class="coins">${rows.length ? rows.map(row).join("") : `<div class="empty">No coins yet. <a href="#/launch">Launch the first one.</a></div>`}</div>
     </section>`;
 }
@@ -686,9 +688,9 @@ async function launchView() {
   if (!DEMO && FACTORY_ID) LAUNCH_COST = BigInt(await view(FACTORY_ID, "get_launch_cost"));
   return `
     <section class="panel full">
-      <div class="label">Launch a Revive coin</div>
-      <p class="hint">The factory deploys the same audited code to <b>&lt;name&gt;.${esc(FACTORY_ID || "revive.testnet")}</b>. You become the creator and first keeper.
-        Your tokens (up to 10%) stay locked and vest only while you keep pulsing. Launching costs ${fmtNear(LAUNCH_COST)} for the coin's storage; anything more seeds the treasury.</p>
+      ${ph("Launch a coin", `Your coin is deployed at <b>&lt;name&gt;.${esc(FACTORY_ID || "revive.testnet")}</b> with the same code as every Revive coin.
+        You become the creator and first keeper. Your share (up to 10%) stays locked and vests only while you keep pulsing.
+        Launching costs ${fmtNear(LAUNCH_COST)} for storage; anything you add on top goes to the treasury.`)}
       <form id="launch" class="stack">
         <div class="grid2">
           <label class="f"><span>Account name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" placeholder="ninelives"></label>
@@ -739,19 +741,15 @@ const CONNECT = { token: "", info: null, err: "" };
 async function connectView() {
   setAccent("alive");
   if (!DEMO && !CONNECT_FACTORY) return `
-    <section class="panel full"><div class="label">Connect a coin</div>
-      <p class="hint">Connecting tokens launched elsewhere needs the new factory, which isn't on testnet yet.
-        You can try the whole flow in the <a href="?demo#/connect">simulator</a>.</p></section>`;
+    <section class="panel full">${ph("Connect a coin", `Connecting isn't available on this network yet. You can try the whole flow in the <a href="?demo#/connect">simulator</a>.`)}</section>`;
   CONNECT_COST = await REG.connectCost();
   const t = CONNECT.info, already = t ? (await REG.coins()).find((c) => c.token_id === CONNECT.token) : null;
   const sym = t ? esc(t.meta.symbol) : "TOKEN";
   return `
     <section class="panel full">
-      <div class="label">Connect a coin launched outside Revive</div>
-      <p class="hint">Any NEP-141 token works: meme.cooking, a launchpad, or your own contract. The token doesn't change.
-        Revive deploys a guard for it at <b>&lt;name&gt;.${esc(CONNECT_FACTORY || "revive.testnet")}</b>. You lock your bag in the guard,
-        holders stake there, and the same rules apply: pulse or flatline, and only stake from before the flatline votes.
-        If holders take over, your locked bag is sealed in the guard forever.</p>
+      ${ph("Connect a coin", `For a token launched outside Revive: meme.cooking, another launchpad or your own contract. The token itself doesn't change.
+        Revive sets up a guard for it at <b>&lt;name&gt;.${esc(CONNECT_FACTORY || "revive.testnet")}</b>. You lock your tokens there and holders stake there.
+        The same rules apply, and if holders take over, your locked tokens stay sealed in the guard for good.`)}
       <div class="stack">
         <label class="f"><span>Token contract</span><input id="c-token" placeholder="${DEMO ? "pepe.cooking.testnet" : "yourtoken.testnet"}" value="${esc(CONNECT.token)}"></label>
         <div class="actions" style="margin-top:0"><button id="b-check">Check token</button></div>
@@ -777,7 +775,7 @@ async function connectView() {
         </div>
         <label class="f"><span>Links (website, X, Telegram)</span><input name="links" placeholder="https://x.com/yourcoin"></label>
         <div class="actions"><button class="primary" type="submit">Connect $${sym}</button><span class="hint" id="ccost"></span></div>
-        <p class="hint">Next, on the coin's page: lock your bag (you become creator and first keeper) and tell holders to stake.</p>
+        <p class="hint">Next, on the coin's page: lock your tokens (you're the creator and first keeper), then ask holders to stake.</p>
       </form>` : ""}
     </section>`;
 }
@@ -802,15 +800,22 @@ function howView() {
   setAccent("alive");
   return `
     <section class="panel full">
-      <div class="label">User guide</div>
+      ${ph("User guide", "How a coin lives, dies and comes back.")}
       <div class="steps-how">
-        <div><b>Pulse.</b> The keeper (first the creator) must send an on-chain pulse before every deadline. On time, it's free.</div>
+        <div><b>Pulse.</b> The keeper (at first, the creator) sends an on-chain pulse before every deadline. On time, it's free.</div>
         <div><b>Flatline.</b> Miss the deadline and the coin flatlines. The keeper can no longer spend the treasury, claim tokens or change links.</div>
-        <div><b>Takeover.</b> Any holder who held before the flatline nominates a Sputnik DAO as the new keeper, and a vote opens.</div>
-        <div><b>Only the loyal vote.</b> Weight is how many tokens you held times how long, counted up to the moment of death. Tokens bought after the death count for nothing, and moving them to another wallet doesn't help.</div>
-        <div><b>Comeback.</b> The old keeper can still come back while the vote is open, but pays a penalty into the treasury, and the vote is cancelled.</div>
-        <div><b>Revival.</b> If yes wins and reaches quorum, the DAO becomes keeper, the creator's locked tokens burn, and the coin gains a life. The DAO must keep pulsing too, or the cycle repeats.</div>
-        <div><b>Lore.</b> Every birth, death, takeover and revival is written on-chain, so a coin's history is part of its meme.</div>
+        <div><b>Takeover.</b> Any holder from before the flatline can nominate a Sputnik DAO as the new keeper. That opens a vote.</div>
+        <div><b>Who votes.</b> Your vote counts by how many tokens you held and for how long, up to the moment the coin died. Tokens bought after that count for nothing, and moving them to another wallet doesn't help.</div>
+        <div><b>Comeback.</b> While the vote is open, the old keeper can still come back, but pays a penalty into the treasury and the vote is cancelled.</div>
+        <div><b>Revival.</b> If yes wins and reaches quorum, the DAO becomes keeper, the creator's locked tokens are burned and the coin gains a life. The DAO has to keep pulsing too.</div>
+        <div><b>Lore.</b> Every birth, death, takeover and revival is recorded on-chain, so a coin's history is part of its meme.</div>
+      </div>
+      <div class="ph" style="margin-top:26px"><h2>Coins launched elsewhere</h2></div>
+      <div class="steps-how">
+        <div><b>Connect.</b> On <a href="#/connect">Connect a coin</a>, paste the token's account. Revive sets up a guard next to it; the token itself doesn't change.</div>
+        <div><b>Lock.</b> The creator locks their tokens in the guard. They vest only while the creator keeps pulsing.</div>
+        <div><b>Stake.</b> Holders stake in the guard to get a vote. Unstaking is always open, but only stake from before the flatline counts.</div>
+        <div><b>Revival.</b> Same takeover rules. If holders win, the creator's locked tokens stay sealed in the guard for good.</div>
       </div>
       <p class="hint" style="margin-top:18px">Code, tests and limits: <a href="${REPO}" target="_blank" rel="noopener">${REPO}</a></p>
     </section>`;
@@ -832,7 +837,7 @@ async function coinView(r) {
     <section class="panel full monitor">
       <div class="flash" id="flash"></div>
       <div class="monitor-top">
-        <div><div class="label">${guard ? "Guard" : "Patient"} · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a>${guard
+        <div><div class="label">Coin · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a>${guard
             ? ` · token <a href="${EXPLORER}/token/${esc(S.token_id)}" target="_blank" rel="noopener">${esc(short(S.token_id))}</a>` : ""}</div>
           <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small>${guard ? `<small class="tag">connected</small>` : ""}</div></div>
         <div style="text-align:right"><div class="label">Status</div>
@@ -888,24 +893,24 @@ async function takeoverPanel(src, S) {
           : "No vote: you held nothing before the flatline. Tokens bought after the death don't count."}</span>` :
         `<button class="primary" id="b-yes">Vote yes, revive</button><button id="b-no">Vote no</button>`}</div>`;
   }
-  return `<section class="panel"><div class="label">Takeover</div>${body}</section>`;
+  return `<section class="panel">${ph("Takeover")}${body}</section>`;
 }
 
 async function keeperPanel(src, S) {
   const me = src.me(), isKeeper = me === S.keeper, dead = S.now > S.flatline_at, guard = S.kind === "guard";
   const canLock = guard && me && me === S.creator && S.keeper === S.creator;
   const wallet = canLock ? BigInt(await src.wallet(me)) : 0n;
-  return `<section class="panel"><div class="label">Keeper</div>
+  return `<section class="panel">${ph("Keeper")}
     <div class="row"><span>Keeper</span><b style="color:${isDao(S.keeper, S) ? "var(--dao)" : "inherit"}">${esc(S.keeper)}</b></div>
     <div class="row"><span>Creator</span><b>${esc(S.creator)}</b></div>
-    <div class="row"><span>${guard ? "Creator bag locked" : "Creator tokens locked"}</span><b>${fmtTokens(S.dev_locked)}</b></div>
-    <div class="row"><span>${guard ? "Creator bag sealed" : "Creator tokens burned"}</span><b style="color:${BigInt(S.dev_burned) > 0n ? "var(--dead)" : "inherit"}">${fmtTokens(S.dev_burned)}</b></div>
+    <div class="row"><span>${guard ? "Creator tokens locked" : "Creator tokens locked"}</span><b>${fmtTokens(S.dev_locked)}</b></div>
+    <div class="row"><span>${guard ? "Creator tokens sealed" : "Creator tokens burned"}</span><b style="color:${BigInt(S.dev_burned) > 0n ? "var(--dead)" : "inherit"}">${fmtTokens(S.dev_burned)}</b></div>
     <div class="row"><span>Comeback penalty</span><b>${fmtNear(S.config.comeback_penalty)}</b></div>
     <div class="actions">${isKeeper ? `<button class="primary" id="b-pulse" data-late="${dead ? 1 : ""}">${dead ? "Come back (pay penalty)" : "Pulse ♥"}</button>` : `<span class="hint">Only the keeper can pulse.</span>`}</div>
-    ${canLock ? `<div class="stack"><div class="label">Lock your bag · wallet ${fmtTokens(wallet)} $${esc(S.config.symbol)}</div>
+    ${canLock ? `<div class="stack"><div class="label">Lock your tokens · ${fmtTokens(wallet)} $${esc(S.config.symbol)} in your wallet</div>
       <input id="lock-amt" inputmode="decimal" placeholder="amount of $${esc(S.config.symbol)}">
       <button id="b-lock">Lock in the guard</button>
-      <span class="hint">Locked tokens vest to you while you keep pulsing. If holders take over, what's left is sealed forever.</span></div>` : ""}
+      <span class="hint">Locked tokens vest to you while you keep pulsing. If holders take over, whatever is still locked stays sealed.</span></div>` : ""}
   </section>`;
 }
 
@@ -913,8 +918,7 @@ async function stakePanel(src, S) {
   const me = src.me(), sym = esc(S.config.symbol);
   const barred = me && (me === S.keeper || me === S.creator);
   const [wallet, staked] = me ? (await Promise.all([src.wallet(me), src.stakeOf(me)])).map(BigInt) : [0n, 0n];
-  return `<section class="panel"><div class="label">Stake — only staked $${sym} votes</div>
-    <p class="hint">Your vote weight is your stake times how long it was staked before the flatline. Unstaking is always open.</p>
+  return `<section class="panel">${ph("Stake", `Only staked $${sym} can vote. Your vote counts by how much you staked and for how long before the flatline. You can unstake at any time.`)}
     <div class="row"><span>In your wallet</span><b>${me ? fmtTokens(wallet) + " $" + sym : "connect a wallet"}</b></div>
     <div class="row"><span>Staked</span><b>${me ? fmtTokens(staked) + " $" + sym : "—"}</b></div>
     ${!me ? "" : barred ? `<p class="hint">The keeper and creator can't stake.</p>` : `<div class="stack">
@@ -971,7 +975,7 @@ const RANGE = {};                                   // per coin: "all" or "zoom"
 const NICE = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, DAY, 2 * DAY, 7 * DAY, 14 * DAY, 30 * DAY];
 async function activityPanel(src, S) {
   let A;
-  try { A = await src.activity(S); } catch (e) { return `<section class="panel full"><div class="label">Activity</div><p class="hint">Couldn't load history: ${esc(e.message)}</p></section>`; }
+  try { A = await src.activity(S); } catch (e) { return `<section class="panel full">${ph("Activity")}<p class="hint">Couldn't load history: ${esc(e.message)}</p></section>`; }
   const sym = esc(S.config.symbol), now = S.now;
   const known = A.transfers !== null && !A.partial;
   const tr = A.transfers || [];
@@ -1042,7 +1046,7 @@ async function activityPanel(src, S) {
   const range = canZoom ? `<div class="actions" style="margin-top:8px">
       <button data-range="all" class="${zoom ? "" : "primary"}">Since ${A.from ? "earliest loaded" : "launch"}</button>
       <button data-range="zoom" class="${zoom ? "primary" : ""}">Zoom to activity</button></div>` : "";
-  return `<section class="panel full"><div class="label">Activity — $${sym} transfers per ${per}, with every pulse, vote and revival</div>
+  return `<section class="panel full">${ph("Activity", `$${sym} transfers per ${per}, with every pulse, vote and revival marked.`)}
     ${range}
     ${legend}
     <div class="chart"><svg viewBox="0 0 ${W} ${H}" font-family="JetBrains Mono, monospace" role="img" aria-label="Activity chart for $${sym}">
@@ -1076,7 +1080,7 @@ async function lorePanel(src, full) {
   const items = (full ? lore : lore.slice(0, 6)).map((l) =>
     `<li style="--c:var(${LORE_C[l.kind] || "--dim"})"><span class="t">${new Date(l.at * 1000).toISOString().slice(0, 16).replace("T", " ")}</span>
       <div class="k">${esc(l.kind.replace("_", " "))}</div>${esc(l.note)}</li>`).join("");
-  return `<section class="panel ${full ? "full" : ""}"><div class="label">Lore — every death and revival, on-chain</div><ul class="lore">${items}</ul></section>`;
+  return `<section class="panel ${full ? "full" : ""}">${ph("Lore", "Every birth, death and revival, recorded on-chain.")}<ul class="lore">${items}</ul></section>`;
 }
 
 async function verifyPanel(src, S) {
@@ -1088,7 +1092,7 @@ async function verifyPanel(src, S) {
   const keeperDao = isDao(S.keeper, S) && S.keeper !== S.creator;
   const item = (ok, title, detail) => `<div class="check"><span class="i" style="color:var(${ok === null ? "--vote" : ok ? "--alive" : "--dead"})">${ok === null ? "!" : ok ? "✓" : "✗"}</span>
     <div><b>${title}</b><div class="d">${detail}</div></div></div>`;
-  return `<section class="panel full"><div class="label">Verify — read live from ${DEMO ? "the simulator" : "NEAR RPC"}, no trust needed</div>
+  return `<section class="panel full">${ph("Verify", DEMO ? "Checks read from the simulator." : "Checks read live from NEAR. Nothing here needs to be taken on trust.")}
     ${item(v.keys === 0, v.keys === 0 ? "The coin has no access keys" : `The coin has ${v.keys} access key(s)`,
       "Nobody can sign transactions as this coin or replace its code. Only its rules can move its tokens and treasury.")}
     ${item(matches, matches ? (guard ? "Same code as every Revive guard" : "Same code as every Revive coin") : "Code hash does not match the factory",
@@ -1115,9 +1119,9 @@ async function verifyPanel(src, S) {
 function directorPanel(id) {
   if (!DEMO) return "";
   return `<section class="panel full director">
-    <div class="label">Demo mode — simulated contract, same rules${id === MOCKS[0].id ? "" : ". The scripted story runs on $NINE"}</div>
+    ${ph("Simulator", `A simulated contract with the same rules.${id === MOCKS[0].id ? " Click the steps in order to play the story." : " The step-by-step story is on Nine Lives."}`)}
     <p class="hint">You are acting as <select id="actor" style="width:auto;display:inline-block">${["alice.testnet", "bob.testnet", "carol.testnet", "whale.testnet", "dev.testnet", REG.coin(id).keeper]
-      .filter((v, i, a) => a.indexOf(v) === i).map((a) => `<option ${a === ACTOR.value ? "selected" : ""}>${a}</option>`).join("")}</select>. Run the story in order, or play any actor yourself.</p>
+      .filter((v, i, a) => a.indexOf(v) === i).map((a) => `<option ${a === ACTOR.value ? "selected" : ""}>${a}</option>`).join("")}</select>. Switch accounts to act as anyone.</p>
     ${id === MOCKS[0].id ? `<div class="steps">${STORY.map(([l], i) => `<button data-i="${i}">${l}</button>`).join("")}</div>` : ""}
     <div class="actions"><button data-skip="21600">⏩ +6 hours</button><button data-skip="86400">⏩ +1 day</button>
       ${REG.coin(id) instanceof GuardMock ? `<button data-buy="1">Whale buys 250M $${esc(REG.coin(id).cfg.symbol)}</button>` : ""}</div>
