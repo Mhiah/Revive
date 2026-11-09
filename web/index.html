@@ -238,8 +238,8 @@ const FACTORIES = [...new Set([FACTORY_ID, CONNECT_FACTORY].filter(Boolean))];
 const LEGACY_COIN = params.get("contract");                 // old single-coin links
 const DEMO = params.has("demo") || (!FACTORY_ID && !LEGACY_COIN);
 const RPCS = NETWORK === "mainnet"
-  ? ["https://free.rpc.fastnear.com", "https://near.drpc.org"]
-  : ["https://test.rpc.fastnear.com", "https://near-testnet.drpc.org"];
+  ? ["https://free.rpc.fastnear.com", "https://near.drpc.org", "https://rpc.mainnet.near.org"]
+  : ["https://test.rpc.fastnear.com", "https://near-testnet.drpc.org", "https://rpc.testnet.near.org"];
 const EXPLORER = NETWORK === "mainnet" ? "https://nearblocks.io" : "https://testnet.nearblocks.io";
 const REPO = "https://github.com/Mhiah/Revive";
 const TGAS30 = "30000000000000", TGAS100 = "100000000000000", TGAS300 = "300000000000000";
@@ -337,12 +337,18 @@ async function sendTx(receiverId, methodName, args, deposit = "0", gas = TGAS30)
 const liveRegistry = {
   async coins() {
     if (LEGACY_COIN && !FACTORY_ID) return [{ account_id: LEGACY_COIN }];
+    // Each factory gets a retry. A failed read must not look like "no coins", so it throws.
     const lists = await Promise.all(FACTORIES.map(async (f) => {
-      try {
-        const n = await view(f, "get_coin_count"), out = [];
-        for (let i = 0; i < n; i += 100) out.push(...await view(f, "get_coins", { from_index: i, limit: 100 }));
-        return out;
-      } catch { return []; }
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const n = await view(f, "get_coin_count"), out = [];
+          for (let i = 0; i < n; i += 100) out.push(...await view(f, "get_coins", { from_index: i, limit: 100 }));
+          return out;
+        } catch (e) {
+          if (attempt >= 1) throw e;
+          await new Promise((r) => setTimeout(r, 800));
+        }
+      }
     }));
     return lists.flat();
   },
@@ -716,9 +722,33 @@ async function render() {
 }
 
 // ----------------------------------------------------------- Flatline Watch
+const heroHtml = () => `
+    <section class="hero">
+      <div>
+        <div class="label">NEP-141 · Sputnik DAO · NEAR</div>
+        <h1>Community takeover,<br><em>onchain.</em></h1>
+      </div>
+      <div class="hero-copy">
+        <p>The dev keeps the coin alive by posting a heartbeat on-chain. If the heartbeat stops, the coin flatlines
+          and holders can vote a DAO in to take over. If the vote passes, the dev's locked tokens are burned,
+          the treasury moves to the DAO and the coin gains a life. Only tokens held before the flatline can vote.</p>
+        ${DEMO ? `<p class="sim">You're in the simulator. <a href="./">See the live coins on NEAR testnet</a>.</p>` : ""}
+      </div>
+    </section>`;
+let WATCH_LAST = null;                            // last list that loaded, shown if a refresh fails
 async function watchView() {
   setAccent("alive");
-  const coins = await REG.coins();
+  let coins;
+  try { coins = await REG.coins(); }
+  catch (e) {
+    if (WATCH_LAST) coins = WATCH_LAST;
+    else {
+      // Nothing loaded yet: keep trying quietly until NEAR answers.
+      setTimeout(() => { if (route().page === "watch") render(); }, 2000);
+      return `${heroHtml()}<section class="panel full">${ph("Flatline Watch")}<div class="empty">Loading coins…</div></section>`;
+    }
+  }
+  WATCH_LAST = coins;
   const rows = await Promise.all(coins.map(async (c) => {
     try { return { c, s: await REG.coin(c.account_id).status() }; } catch { return { c, s: null }; }
   }));
@@ -751,18 +781,7 @@ async function watchView() {
       <span class="trend" style="--t:var(${col})" title="${word} · ${livesNote}"><b>${tri}</b><span class="hide-sm">${word}</span></span></a>`;
   };
   return `
-    <section class="hero">
-      <div>
-        <div class="label">NEP-141 · Sputnik DAO · NEAR</div>
-        <h1>Community takeover,<br><em>onchain.</em></h1>
-      </div>
-      <div class="hero-copy">
-        <p>The dev keeps the coin alive by posting a heartbeat on-chain. If the heartbeat stops, the coin flatlines
-          and holders can vote a DAO in to take over. If the vote passes, the dev's locked tokens are burned,
-          the treasury moves to the DAO and the coin gains a life. Only tokens held before the flatline can vote.</p>
-        ${DEMO ? `<p class="sim">You're in the simulator. <a href="./">See the live coins on NEAR testnet</a>.</p>` : ""}
-      </div>
-    </section>
+    ${heroHtml()}
     <section class="panel full">
       <div class="watchhead">
         ${ph("Flatline Watch", "Open takeovers first, then dead coins, then the coins closest to death.")}
