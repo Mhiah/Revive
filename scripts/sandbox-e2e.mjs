@@ -18,6 +18,7 @@ try {
   console.error(e);
   code = 1;
 } finally {
-  await sandbox.tearDown();
+  // Don't let a slow sandbox shutdown keep CI waiting after the result is in.
+  await Promise.race([sandbox.tearDown().catch(() => {}), new Promise((r) => setTimeout(r, 15_000))]);
 }
 process.exit(code);
