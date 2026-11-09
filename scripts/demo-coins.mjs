@@ -1,4 +1,4 @@
-// Deploys the Revive factory and plays two live stories, checking every step:
+// Deploys the Revive factory and plays up to five live stories, checking every step:
 //   $NINE  — the dev goes silent, a whale buys after the death and is refused a
 //            vote, holders vote a steward in, the coin revives, the steward pulses.
 //   $BACK  — the dev goes silent, a takeover opens, the dev comes back mid-vote

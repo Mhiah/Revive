@@ -28,9 +28,9 @@ Connecting a token launched elsewhere runs through a second locked factory,
 ($HERE, "Still Here") has a 3-day heartbeat. The [keep-alive workflow](.github/workflows/keep-alive.yml)
 pulses it twice a day, so Flatline Watch always shows a healthy coin next to the revived ones. It comes from
 the current factory, [`revive-6tx39.revive.testnet`](https://testnet.nearblocks.io/address/revive-6tx39.revive.testnet)
-(locked, no keys), which holds the fixed coin and guard code; the site's Launch and Connect use it. The coins
-below were made by earlier locked factories and keep the version from before the two quorum fixes described
-under [Tests](#tests). Their stories still show the full mechanic.
+(locked, no keys), which holds the fixed coin and guard code; the site's Launch and Connect use it. The other
+coins on this page were made by the two earlier locked factories and keep the version from before the two quorum
+fixes described under [Tests](#tests). Their stories still show the full mechanic.
 
 A takeover by a **real Sputnik DAO**, live on testnet:
 
@@ -40,7 +40,7 @@ The other testnet coins nominate stand-in steward accounts to save test NEAR (a 
 the **Verify** tab labels them as stand-ins.
 
 All stories were played by the [testnet-demo workflow](.github/workflows/testnet-demo.yml) with 60-second timers,
-so both coins have since flatlined again: anyone holding from before can open a takeover.
+so every story coin except $HERE has since flatlined again: anyone holding from before can open a takeover.
 
 **Already launched somewhere else?** Any NEP-141 token can be **connected**: Revive deploys a guard next to it
 with the same heartbeat and takeover rules ([below](#connect-a-coin-launched-elsewhere)).
@@ -52,7 +52,7 @@ Open **Nine Lives** and click the story buttons in order.
 
 | Do this | You should see |
 | --- | --- |
-| Open [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) | **Flatline Watch** listing `$NINE`, `$BACK` and the connected `$MEME` (tagged *connected*), read live from NEAR testnet |
+| Open [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) | **Flatline Watch** read live from NEAR testnet: `$HERE` alive, the revived `$NINE` and `$CIVIC`, `$BACK`, and the connected `$MEME` (tagged *connected*), each with its pulse, shelf life and trend |
 | Click **Nine Lives** → **Verify** | Six checks from RPC: no access keys on the coin, its code hash equals the factory's, the factory has no keys, treasury backed, supply adds up (100M burned), and who the keeper is |
 | Click **Lore** | The coin's on-chain history: born, flatline, takeover, revived |
 | Click **Activity** | Token transfers over time, every pulse and vote marked, flatlined stretches shaded red |
@@ -60,7 +60,7 @@ Open **Nine Lives** and click the story buttons in order.
 | Open [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) → **Nine Lives**, click steps 1–11 | The full story with no wallet: a whale's post-death vote is refused, the coin revives, the DAO pulses |
 | `cd contract && cargo test` | `76 passed` (plus `guard`: `35 passed`, `factory`: `24 passed`): [what each group proves](#tests) |
 | `cd contract && cargo run --example simulate` | The [60-day simulation](#60-day-simulation): six scenarios' day-60 results printed; `docs/simulation.json` rewritten |
-| Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | All four stories on a local NEAR node, including connecting an outside token and a takeover by a real Sputnik DAO, every step checked (`All checks passed`) |
+| Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | All five stories on a local NEAR node, including connecting an outside token and a takeover by a real Sputnik DAO, every step checked (`All checks passed`) |
 | [testnet-demo run](https://github.com/Mhiah/Revive/actions/workflows/testnet-demo.yml) | The same stories on NEAR testnet, against the coins above |
 
 ## Why
@@ -197,9 +197,9 @@ cases are tested against a stricter bar.
 | Page | What it shows |
 | --- | --- |
 | **Flatline Watch** | A table of every coin and connected token: its pulse status, its shelf life (time left before it flatlines, with a bar), and a trend arrow (▲ healthy, ▼ fading, dead or in a vote). Open takeovers come first, then dead coins, then whoever is closest to death. |
-| **Launch** | A form that calls the factory: name, supply, locked share, pulse interval, vote length, quorum, penalty, treasury seed. |
+| **Launch** | A form that calls the factory: coin image, name, supply, locked share, pulse interval, vote length, quorum, penalty, treasury seed and links. The image is cropped square, shrunk to 96×96 and stored in the coin as its NEP-148 icon (at most 4 KB), so wallets and explorers show it. Defaults follow [Picking the parameters](#picking-the-parameters): 7-day pulse, 10% quorum. |
 | **Connect a coin** | Paste a token account: the app checks it answers `ft_metadata`, shows its supply and your balance, and connects it. The coin page then has **Lock your bag** for the creator and **Stake / Unstake** for holders. |
-| **Coin · Monitor** | A live heart monitor (green alive, red flatlined, amber voting), countdown, lives, treasury, the takeover vote and the keeper. |
+| **Coin · Monitor** | A live heart monitor (green alive, red flatlined, amber voting), countdown, lives, treasury, the coin's links, the takeover vote and the keeper. The keeper can pulse and change the coin image; the creator can claim vested tokens while they keep the coin alive. |
 | **Coin · Activity** | One time axis: token transfers per bucket, every pulse, vote, takeover and revival marked above, and every stretch without a pulse shaded as flatlined. Hover for a bucket's details; a table view is one click away. |
 | **Coin · Verify** | Checks read live from NEAR RPC: no access keys on the coin, same code hash as the factory (with the hex to compare against CI), factory locked, treasury backed, supply adds up (for a connected coin: the token says the guard holds everything it owes), keeper is a DAO. |
 | **Coin · Lore** | Every birth, death, takeover, comeback and revival, from the contract. |
@@ -254,13 +254,14 @@ are `eligible_total_ignores_tokens_bought_after_the_death`,
 
 **End-to-end on a real NEAR node:** CI starts a local NEAR sandbox and runs
 [scripts/demo-coins.mjs](scripts/demo-coins.mjs): it deploys the factory, stores
-the code, deletes the factory's key, launches three coins, connects an outside
-token and plays four stories with real wasm and a real clock, checking every step:
+the code, deletes the factory's key, launches four coins, connects an outside
+token and plays five stories with real wasm and a real clock, checking every step:
 
 * **$NINE**: the dev goes silent, a whale buys 250M after the death and is refused a vote, holders vote a steward in, the coin revives, 100M creator tokens burn, the old dev can no longer pulse, the steward pulses.
 * **$BACK**: the dev goes silent, a takeover opens, a late pulse without the penalty is refused, the dev pays the 0.2 NEAR penalty, the vote is cancelled and the penalty lands in the treasury.
 * **$MEME**: a plain NEP-141 ([samples/plain-token](samples/plain-token), no Revive code) is connected. The factory reads its name from the token and registers the guard. The dev locks 100M, holders stake 600M, the dev goes silent, a whale stakes 250M after the death and gets weight 0, holders take over, the 100M bag is sealed, the token confirms the guard holds exactly staked + sealed, and a holder unstakes back to their wallet.
 * **$CIVIC**: the takeover goes to a **real Sputnik DAO**, running the exact contract code testnet DAOs run (fetched from testnet). $CIVIC accepts only Sputnik DAOs. After the revival the old dev can't pulse; the DAO pulses $CIVIC through a proposal its council approves, then pays a contributor 0.05 NEAR from the coin's treasury the same way. A council member acting alone can't spend.
+* **$HERE**: a coin with a 3-day heartbeat that its keeper pulses on time; it stays alive and nobody can open a takeover.
 
 ```bash
 cd scripts && npm install && cd ..
@@ -269,7 +270,7 @@ node scripts/sandbox-e2e.mjs      # needs the two wasm files from CI or cargo ne
 
 **The same stories on testnet:** run the **testnet-demo** workflow (Actions tab)
 after adding `NEAR_ACCOUNT_ID` and `NEAR_PRIVATE_KEY` secrets for a funded
-testnet account. Pick the stories with `stories` (`coins`, `guard`, or both); the run prints
+testnet account. Pick the stories with `stories` (any of `coins`, `guard`, `dao`, `alive`, comma-separated); the run prints
 how much NEAR it needs before it starts. It uploads `demo-coins.json` with the factory
 and coin names. Pass an existing Sputnik DAO as `steward` to nominate a real DAO.
 
@@ -332,15 +333,15 @@ The site is published to GitHub Pages on every push.
 contract/            the coin (near-sdk 5.30)
   src/lib.rs         state, keeper, takeover, revival, views
   src/token.rs       NEP-141 / 145 / 148 and hold-time accounting
-  src/tests.rs       21 unit tests
-factory/             launches coins and connects tokens as <name>.<factory>; 10 unit tests
-guard/               the guard for a connected token: lock, stake, takeover; 14 unit tests
+  src/tests.rs       lifecycle tests; src/tests/ attacks, timing, money, random histories (76 in all)
+factory/             launches coins and connects tokens as <name>.<factory>; 24 tests
+guard/               the guard for a connected token: lock, stake, takeover; 35 tests
 samples/plain-token/ a plain NEP-141 standing in for a coin launched elsewhere
-contract/examples/   simulate.rs: 60 days x 6 scenarios on the real contract
+contract/examples/   simulate.rs: 60 days x 6 scenarios plus quorum and heartbeat sweeps, on the real contract
 web/index.html       the app: Flatline Watch, Launch, Connect, coin Monitor / Activity / Verify / Lore, demo mode
-docs/                simulation data and README images
-scripts/             demo-coins.mjs (deploy + three stories), sandbox-e2e.mjs, Sputnik DAO how-to
-.github/workflows/   CI (tests, lints, wasm, sandbox e2e), Pages, testnet-demo
+docs/                simulation.json, simulation.png and plot_simulation.py (draws the chart from the json)
+scripts/             demo-coins.mjs (deploy + five stories), sandbox-e2e.mjs, pulse.mjs (keep-alive), Sputnik DAO how-to
+.github/workflows/   CI (tests, lints, wasm, sandbox e2e), Pages, testnet-demo, keep-alive (pulses $HERE twice a day)
 ```
 
 ## Hackathon notes
