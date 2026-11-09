@@ -24,6 +24,14 @@ Connecting a token launched elsewhere runs through a second locked factory,
 
 * [`meme-cia7y.revive-bhtat.revive.testnet`](https://testnet.nearblocks.io/address/meme-cia7y.revive-bhtat.revive.testnet) guards the plain NEP-141 [`meme-cia7y.revive.testnet`](https://testnet.nearblocks.io/address/meme-cia7y.revive.testnet): the dev locked 100M, holders staked, the dev went silent, a whale's post-death stake got no vote, holders took over and the dev's 100M is sealed in the guard. (`meme.revive-bhtat.revive.testnet` is from a run that stopped halfway; its demo accounts' keys were discarded, so it stays flatlined.)
 
+**A coin that stays alive:** [`here.revive-6tx39.revive.testnet`](https://testnet.nearblocks.io/address/here.revive-6tx39.revive.testnet)
+($HERE, "Still Here") has a 3-day heartbeat. The [keep-alive workflow](.github/workflows/keep-alive.yml)
+pulses it twice a day, so Flatline Watch always shows a healthy coin next to the revived ones. It comes from
+the current factory, [`revive-6tx39.revive.testnet`](https://testnet.nearblocks.io/address/revive-6tx39.revive.testnet)
+(locked, no keys), which holds the fixed coin and guard code; the site's Launch and Connect use it. The coins
+below were made by earlier locked factories and keep the version from before the two quorum fixes described
+under [Tests](#tests). Their stories still show the full mechanic.
+
 A takeover by a **real Sputnik DAO**, live on testnet:
 
 * [`civic-vft8z.revive-ztw7t.revive.testnet`](https://testnet.nearblocks.io/address/civic-vft8z.revive-ztw7t.revive.testnet) ($CIVIC) accepts only Sputnik DAOs. Its dev went silent, holders voted in the Sputnik DAO [`civic-vft8z.sputnikv2.testnet`](https://testnet.nearblocks.io/address/civic-vft8z.sputnikv2.testnet) (council: two holders), and the DAO now runs the coin by proposal: it brought $CIVIC back by paying the comeback penalty into the treasury, then paid a contributor 0.05 NEAR from the treasury. A council member acting alone can't spend.

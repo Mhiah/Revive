@@ -229,12 +229,15 @@
 const params = new URLSearchParams(location.search);
 const NETWORK = params.get("network") || "testnet";
 // Set after the testnet deploy (scripts/demo-coins.mjs prints it); ?factory= overrides.
-const DEFAULT_FACTORY = "revive-ztw7t.revive.testnet";
+// The current factory (fixed coin and guard code): launch and connect go here.
+const DEFAULT_FACTORY = "revive-6tx39.revive.testnet";
 // The factory that can connect outside tokens (deploys guards). ?connect= overrides.
-const DEFAULT_CONNECT = "revive-bhtat.revive.testnet";
+const DEFAULT_CONNECT = "revive-6tx39.revive.testnet";
+// Earlier factories: their coins are still listed (they run the version before the quorum fixes).
+const EARLIER_FACTORIES = ["revive-ztw7t.revive.testnet", "revive-bhtat.revive.testnet"];
 const FACTORY_ID = params.get("factory") || DEFAULT_FACTORY;
 const CONNECT_FACTORY = params.get("connect") || DEFAULT_CONNECT;
-const FACTORIES = [...new Set([FACTORY_ID, CONNECT_FACTORY].filter(Boolean))];
+const FACTORIES = [...new Set([FACTORY_ID, CONNECT_FACTORY, ...(params.has("factory") ? [] : EARLIER_FACTORIES)].filter(Boolean))];
 const LEGACY_COIN = params.get("contract");                 // old single-coin links
 const DEMO = params.has("demo") || (!FACTORY_ID && !LEGACY_COIN);
 const RPCS = NETWORK === "mainnet"
