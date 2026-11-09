@@ -1381,7 +1381,13 @@ function bind(r) {
     if ($("ecg")) startEcg();
   }
   document.querySelectorAll("input[data-addr]").forEach((i) => {
-    const show = () => { i.nextElementSibling.textContent = i.value ? `Address: ${i.value}.${i.dataset.addr}` : ""; };
+    i.title = "Lowercase letters, numbers, - or _ (2 to 32 characters)";
+    const show = () => {
+      // NEAR account names are lowercase: fix capitals and spaces as you type instead of failing on submit.
+      const clean = i.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9_-]/g, "");
+      if (clean !== i.value) { const at = i.selectionStart - (i.value.length - clean.length); i.value = clean; try { i.setSelectionRange(at, at); } catch {} }
+      i.nextElementSibling.textContent = i.value ? `Address: ${i.value}.${i.dataset.addr}` : "Lowercase letters, numbers, - or _";
+    };
     i.addEventListener("input", show); show();
   });
   if (r.page === "connect") {
