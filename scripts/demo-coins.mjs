@@ -362,7 +362,14 @@ export async function run(opts) {
   const policy = await view(daoId, "get_policy");
   check(policy.roles.some((r) => JSON.stringify(r.kind).includes(acc.alice.accountId)), `real Sputnik DAO ${daoId} exists, council: alice and bob`);
 
-  const civic = await launch(existingFactory ? `civic-${tag}` : "civic", "CIVIC", "Civic Heart", daoSuffix4);
+  const civicName = existingFactory ? `civic-${tag}` : "civic";
+  const civicId = `${civicName}.${factoryId}`;
+  const takenOver = resumeTag && await exists(civicId) && (await view(civicId, "get_status")).keeper === daoId;
+  let civic = civicId;
+  if (takenOver) {
+    log(`  resuming: ${civicId} is already kept by ${daoId}`);
+  } else {
+  civic = await launch(civicName, "CIVIC", "Civic Heart", daoSuffix4);
   check((await view(civic, "get_status")).config.dao_suffix === daoSuffix4, `$CIVIC only accepts DAOs ending in ${daoSuffix4}`);
   log("  dev goes silent");
   await waitPast(civic, "flatline");
@@ -371,8 +378,18 @@ export async function run(opts) {
   await call(acc.bob, civic, "vote", { support: true });
   await waitPast(civic, "vote");
   const ok4 = await call(acc.bob, civic, "finalize_takeover");
+  check(ok4 === true, "takeover finalized");
+  }
   const c1 = await view(civic, "get_status");
-  check(ok4 === true && c1.keeper === daoId && c1.lives === 1, `$CIVIC revived: keeper is the Sputnik DAO ${daoId}`);
+  check(c1.keeper === daoId && c1.lives === 1, `$CIVIC revived: keeper is the Sputnik DAO ${daoId}`);
+  // The council's votes carry the gas for running each proposal, so make sure they can pay it.
+  const topUp = async (a, min) => {
+    const bal = BigInt(await new Account(a.accountId, provider).getBalance());
+    const want = BigInt(nearToYocto(min));
+    if (bal < want) await root.transfer({ receiverId: a.accountId, amount: (want - bal).toString() });
+  };
+  await topUp(acc.alice, "1.4");
+  await topUp(acc.bob, "0.5");
   check(await fails(call(acc.dev, civic, "pulse"), "keeper"), "the old dev can no longer pulse");
 
   // The DAO runs the coin: every action is a proposal its council votes on.
