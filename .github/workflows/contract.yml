@@ -84,7 +84,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Run all three stories on a local NEAR sandbox
+      - name: Run all four stories on a local NEAR sandbox
         run: |
           cd scripts && npm install --no-audit --no-fund && cd ..
           node scripts/sandbox-e2e.mjs

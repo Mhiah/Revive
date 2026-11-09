@@ -17,7 +17,7 @@ on:
         description: "Pulse interval and vote length in seconds (min 60)"
         default: "60"
       stories:
-        description: "coins = $NINE and $BACK, guard = connect an outside $MEME token"
+        description: "coins = $NINE and $BACK, guard = connect an outside $MEME token, dao = a real Sputnik DAO takes over $CIVIC"
         default: "guard"
       factory:
         description: "Reuse an existing locked factory (optional), e.g. revive-bhtat.revive.testnet"
@@ -77,6 +77,7 @@ jobs:
           STORIES: ${{ inputs.stories }}
           FACTORY: ${{ inputs.factory }}
           RESUME_TAG: ${{ inputs.resume }}
+          SPUTNIK_FACTORY: sputnikv2.testnet
         run: |
           cd scripts && npm install --no-audit --no-fund && cd ..
           node scripts/demo-coins.mjs

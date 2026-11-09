@@ -43,6 +43,9 @@ export async function run(opts) {
     lockFactory = true,
     existingFactory,                  // reuse a deployed, locked factory instead of making one
     resumeTag,                        // continue a stopped run: skip accounts and token that already exist
+    sputnikFactory,                   // "sputnikv2.testnet" to create a real DAO; unset = deploy the DAO code ourselves (sandbox)
+    daoCodeFrom = { rpc: "https://test.rpc.fastnear.com", account: "clausehold-council.sputnikv2.testnet" },
+    daoDeposit = "5.6",               // a Sputnik v2 DAO stores ~541 KB
     out = "demo-coins.json",
   } = opts;
 
@@ -71,8 +74,9 @@ export async function run(opts) {
   // ------------------------------------------------------------ accounts
   // Fund each account with what it needs: storage is 1 NEAR per 100 KB.
   const want = (x) => stories.includes(x);
+  const needCoin = want("coins") || want("dao");
   const size = async (f) => (await readFile(f)).length;
-  const coinBytes = want("coins") ? await size(coinWasm) : 0;
+  const coinBytes = needCoin ? await size(coinWasm) : 0;
   const guardBytes = want("guard") ? await size(guardWasm) : 0;
   const tokenBytes = want("guard") ? await size(tokenWasm) : 0;
   const factoryBytes = await size(factoryWasm);
@@ -80,11 +84,16 @@ export async function run(opts) {
   const launchCost = (coinBytes + 10_000) * perByte;            // matches get_launch_cost
   const connectCost = (guardBytes + 10_000) * perByte + 0.00125; // matches get_connect_cost
   const factoryFund = existingFactory ? 0 : (factoryBytes + coinBytes + guardBytes + 4_000) * perByte + 0.3;
-  const devFund = (want("coins") ? 2 * (launchCost + 0.1) + 0.2 : 0) + (want("guard") ? connectCost + 0.1 + 0.2 : 0) + 0.3;
+  const devFund = (want("coins") ? 2 * (launchCost + 0.1) + 0.2 : 0) + (want("guard") ? connectCost + 0.1 + 0.2 : 0)
+    + (want("dao") ? launchCost + 0.2 + 0.2 : 0) + 0.3;
+  const daoFund = want("dao") ? Number(daoDeposit) + (sputnikFactory ? 0 : 0.3) : 0;
   const tokenFund = want("guard") ? (tokenBytes + 4_000) * perByte + 0.3 : 0;
   const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
-  const names = { dev: r2(devFund), alice: holderNear, bob: holderNear, carol: holderNear, whale: holderNear };
-  const need = factoryFund + devFund + tokenFund + 4 * Number(holderNear) + (givenSteward ? 0 : 0.25) + 0.2;
+  // In the DAO story alice proposes, which needs the DAO's 1 NEAR proposal bond (refunded when it passes).
+  const aliceNear = want("dao") ? r2(Number(holderNear) + 1.1) : holderNear;
+  const names = { dev: r2(devFund), alice: aliceNear, bob: holderNear, carol: holderNear, whale: holderNear };
+  const standIn = !givenSteward && (want("coins") || want("guard"));
+  const need = factoryFund + devFund + tokenFund + daoFund + Number(aliceNear) + 3 * Number(holderNear) + (standIn ? 0.35 : 0) + 0.3;
   log(`Stories: ${stories.join(", ")}. Wasm bytes: coin ${coinBytes}, guard ${guardBytes}, token ${tokenBytes}, factory ${factoryBytes}`);
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
@@ -102,7 +111,7 @@ export async function run(opts) {
   let steward = givenSteward;
   let suffix = daoSuffix;
   let stewardAcc = null;
-  if (!steward) {
+  if (standIn) {
     // Stand-in steward: a plain account in its own namespace, nominated by suffix.
     const parent = as(`stewards-${tag}.${rootId}`);
     if (!(resumeTag && await exists(parent.accountId))) {
@@ -119,15 +128,15 @@ export async function run(opts) {
   let codeHash = null, guardHash = null;
   if (existingFactory) {
     log(`Reusing factory ${factoryId}`);
-    if (want("coins")) codeHash = await view(factoryId, "get_code_hash");
+    if (needCoin) codeHash = await view(factoryId, "get_code_hash");
     if (want("guard")) guardHash = await view(factoryId, "get_guard_code_hash");
-    check((!want("coins") || codeHash) && (!want("guard") || guardHash), "the existing factory has the code these stories need");
+    check((!needCoin || codeHash) && (!want("guard") || guardHash), "the existing factory has the code these stories need");
   } else {
   log(`Deploying factory ${factoryId}`);
   const factory = as(factoryId);
   await factory.deployContract(await readFile(factoryWasm));
   await call(factory, factoryId, "new", { owner: rootId });
-  if (want("coins")) {
+  if (needCoin) {
     await root.callFunction({ contractId: factoryId, methodName: "store_code", args: new Uint8Array(await readFile(coinWasm)), gas: teraToGas("300") });
     codeHash = await view(factoryId, "get_code_hash");
     check(!!codeHash, `factory stored the coin code (hash ${codeHash})`);
@@ -153,9 +162,10 @@ export async function run(opts) {
     comeback_penalty: nearToYocto("0.2").toString(), dao_suffix: suffix,
   });
 
-  async function launch(name, symbol) {
+  async function launch(name, symbol, display, sfx = suffix) {
     const coinId = `${name}.${factoryId}`;
-    const cfg = config(`${symbol === "NINE" ? "Nine Lives" : "Back From The Dead"}`, symbol);
+    const cfg = config(display || (symbol === "NINE" ? "Nine Lives" : "Back From The Dead"), symbol);
+    cfg.dao_suffix = sfx;
     cfg.distributor = coinId;
     const cost = BigInt(await view(factoryId, "get_launch_cost"));
     log(`  launch cost ${Number(cost / 10n ** 21n) / 1000} NEAR + 0.1 NEAR treasury`);
@@ -321,6 +331,77 @@ export async function run(opts) {
   result.token = tokenId;
   }
 
+  if (want("dao")) {
+  // ------------------------- story 4: a real Sputnik DAO takes over and runs the coin
+  log("Story 4: $CIVIC is taken over by a real Sputnik DAO, which then pulses and spends by proposal");
+  const daoName = `civic-${tag}`;
+  let daoId, daoSuffix4;
+  const council = [acc.alice.accountId, acc.bob.accountId];
+  const daoArgs = { config: { name: daoName, purpose: "Keeper of $CIVIC after the community takeover", metadata: "" }, policy: council };
+  if (sputnikFactory) {
+    daoId = `${daoName}.${sputnikFactory}`;
+    daoSuffix4 = `.${sputnikFactory}`;
+    if (!(resumeTag && await exists(daoId))) {
+      await call(root, sputnikFactory, "create", { name: daoName, args: Buffer.from(JSON.stringify(daoArgs)).toString("base64") },
+        nearToYocto(daoDeposit).toString(), teraToGas("300"));
+    }
+  } else {
+    // Sandbox: no Sputnik factory here, so deploy the exact code testnet DAOs run, fetched from testnet.
+    const r = await fetch(daoCodeFrom.rpc, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "query", params: { request_type: "view_code", account_id: daoCodeFrom.account, finality: "final" } }) });
+    const code = Buffer.from((await r.json()).result.code_base64, "base64");
+    log(`  fetched Sputnik DAO code from ${daoCodeFrom.account} (${code.length} bytes)`);
+    await root.createSubAccount({ accountOrPrefix: "sputnikv2", publicKey: pub, nearToTransfer: nearToYocto(r2(Number(daoDeposit) + 0.2)) });
+    const parent = as(`sputnikv2.${rootId}`);
+    await parent.createSubAccount({ accountOrPrefix: daoName, publicKey: pub, nearToTransfer: nearToYocto(daoDeposit) });
+    daoId = `${daoName}.sputnikv2.${rootId}`;
+    daoSuffix4 = `.sputnikv2.${rootId}`;
+    await as(daoId).deployContract(code);
+    await call(as(daoId), daoId, "new", daoArgs, "0", teraToGas("100"));
+  }
+  const policy = await view(daoId, "get_policy");
+  check(policy.roles.some((r) => JSON.stringify(r.kind).includes(acc.alice.accountId)), `real Sputnik DAO ${daoId} exists, council: alice and bob`);
+
+  const civic = await launch(existingFactory ? `civic-${tag}` : "civic", "CIVIC", "Civic Heart", daoSuffix4);
+  check((await view(civic, "get_status")).config.dao_suffix === daoSuffix4, `$CIVIC only accepts DAOs ending in ${daoSuffix4}`);
+  log("  dev goes silent");
+  await waitPast(civic, "flatline");
+  await call(acc.alice, civic, "start_takeover", { steward: daoId });
+  await call(acc.alice, civic, "vote", { support: true });
+  await call(acc.bob, civic, "vote", { support: true });
+  await waitPast(civic, "vote");
+  const ok4 = await call(acc.bob, civic, "finalize_takeover");
+  const c1 = await view(civic, "get_status");
+  check(ok4 === true && c1.keeper === daoId && c1.lives === 1, `$CIVIC revived: keeper is the Sputnik DAO ${daoId}`);
+  check(await fails(call(acc.dev, civic, "pulse"), "keeper"), "the old dev can no longer pulse");
+
+  // The DAO runs the coin: every action is a proposal its council votes on.
+  const bond = policy.proposal_bond;
+  async function daoDoes(description, method, args, gas) {
+    const kind = { FunctionCall: { receiver_id: civic, actions: [{
+      method_name: method, args: Buffer.from(JSON.stringify(args)).toString("base64"), deposit: "0", gas: teraToGas(gas).toString() }] } };
+    await call(acc.alice, daoId, "add_proposal", { proposal: { description, kind } }, bond, teraToGas("50"));
+    const id = (await view(daoId, "get_last_proposal_id")) - 1;
+    await call(acc.alice, daoId, "act_proposal", { id, action: "VoteApprove", proposal: kind }, "0", teraToGas("100"));
+    await call(acc.bob, daoId, "act_proposal", { id, action: "VoteApprove", proposal: kind }, "0", teraToGas("150"));
+    return (await view(daoId, "get_proposal", { id })).status;
+  }
+  const before = (await view(civic, "get_status")).last_pulse;
+  await sleep(2);
+  const st1 = await daoDoes("Pulse $CIVIC: the community keeps it alive", "pulse", {}, "30");
+  const c2 = await view(civic, "get_status");
+  check(st1 === "Approved" && c2.last_pulse > before && c2.status === "alive", "DAO proposal approved by alice and bob: the DAO pulsed $CIVIC");
+  const carolBefore = BigInt((await new Account(acc.carol.accountId, provider).getBalance()));
+  const st2 = await daoDoes("Pay carol 0.05 NEAR from the $CIVIC treasury for community work", "spend",
+    { receiver_id: acc.carol.accountId, amount: nearToYocto("0.05").toString(), memo: "community bounty, approved by DAO vote" }, "50");
+  const carolAfter = BigInt((await new Account(acc.carol.accountId, provider).getBalance()));
+  check(st2 === "Approved" && carolAfter - carolBefore === BigInt(nearToYocto("0.05")), "DAO proposal approved: carol was paid 0.05 NEAR from the coin's treasury");
+  check(await fails(call(acc.alice, civic, "spend", { receiver_id: acc.alice.accountId, amount: "1", memo: "x" }), "keeper"),
+    "a council member alone cannot spend: only the DAO, by vote");
+  result.coins.push(civic);
+  result.dao = daoId;
+  }
+
   const registry = await view(factoryId, "get_coins", {});
   check((existingFactory ? registry.length >= result.coins.length : registry.length === result.coins.length) && registry.every((c) => c.kind === (c.token_id ? "guard" : "coin")), `factory registry lists ${result.coins.length} entries with their kinds`);
   await writeFile(out, JSON.stringify(result, null, 2));
@@ -360,6 +441,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     holderNear: process.env.HOLDER_NEAR || "0.15",
     existingFactory: process.env.FACTORY || undefined,
     resumeTag: process.env.RESUME_TAG || undefined,
+    sputnikFactory: process.env.SPUTNIK_FACTORY || undefined,
     out: process.env.OUT || "demo-coins.json",
   }).catch((e) => { console.error(e); process.exit(1); });
 }
