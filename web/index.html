@@ -60,7 +60,7 @@
     header nav { grid-area: nav; gap: 4px; overflow-x: auto; margin: 0 -6px; }
     nav a { padding: 8px 10px; font-size: 14px; }
     header #connect { padding: 8px 12px; font-size: 13px; }
-    header .me { align-items: center; gap: 3px; }
+    header .me { align-items: flex-end; gap: 3px; }
     header .guide { font-size: 11px; text-underline-offset: 2px; } }
 
   /* Buttons and forms */
@@ -190,6 +190,7 @@
   a:hover { color: var(--color-primary-hover); }
   .tag { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--color-primary-hover) !important;
     background: var(--color-blue-light); border-radius: 4px; padding: 2px 6px; margin-left: 8px; vertical-align: 2px; }
+  .addr { font-family: var(--font-mono); font-size: 12px; color: var(--dim); word-break: break-all; min-height: 1em; }
   .tokencard { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--color-background-secondary); }
 
   /* Activity chart */
@@ -784,12 +785,13 @@ async function launchView() {
   if (!DEMO && FACTORY_ID) LAUNCH_COST = BigInt(await view(FACTORY_ID, "get_launch_cost"));
   return `
     <section class="panel full">
-      ${ph("Launch a coin", `Your coin is deployed at <b>&lt;name&gt;.${esc(FACTORY_ID || "revive.testnet")}</b> with the same code as every Revive coin.
+      ${ph("Launch a coin", `Your coin gets the same code as every Revive coin.
         You become the creator and first keeper. Your share (up to 10%) stays locked and vests only while you keep pulsing.
         Launching costs ${fmtNear(LAUNCH_COST)} for storage; anything you add on top goes to the treasury.`)}
       <form id="launch" class="stack">
         <div class="grid2">
-          <label class="f"><span>Account name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" placeholder="ninelives"></label>
+          <label class="f"><span>Account name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" placeholder="ninelives" data-addr="${esc(FACTORY_ID || "revive.testnet")}">
+            <small class="addr"></small></label>
           <label class="f"><span>Coin name</span><input name="cname" required placeholder="Nine Lives"></label>
           <label class="f"><span>Symbol</span><input name="symbol" required maxlength="16" placeholder="NINE"></label>
           <label class="f"><span>Total supply (tokens)</span><input name="supply" type="number" min="1" max="1000000000" value="1000000000"></label>
@@ -844,7 +846,7 @@ async function connectView() {
   return `
     <section class="panel full">
       ${ph("Connect a coin", `For a token launched outside Revive: meme.cooking, another launchpad or your own contract. The token itself doesn't change.
-        Revive sets up a guard for it at <b>&lt;name&gt;.${esc(CONNECT_FACTORY || "revive.testnet")}</b>. You lock your tokens there and holders stake there.
+        Revive sets up a guard next to it. You lock your tokens there and holders stake there.
         The same rules apply, and if holders take over, your locked tokens stay sealed in the guard for good.`)}
       <div class="stack">
         <label class="f"><span>Token contract</span><input id="c-token" placeholder="${DEMO ? "pepe.cooking.testnet" : "yourtoken.testnet"}" value="${esc(CONNECT.token)}"></label>
@@ -860,11 +862,12 @@ async function connectView() {
       </div>
       ${t && !already ? `<form id="connectf" class="stack" style="margin-top:18px">
         <div class="grid2">
-          <label class="f"><span>Guard name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" value="${esc(t.meta.symbol.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}"></label>
+          <label class="f"><span>Guard name</span><input name="name" required pattern="[a-z0-9_\\-]{2,32}" value="${esc(t.meta.symbol.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}" data-addr="${esc(CONNECT_FACTORY || "revive.testnet")}">
+            <small class="addr"></small></label>
           <label class="f"><span>Pulse every (hours)</span><input name="pulse" type="number" min="0.02" step="0.01" value="72"></label>
           <label class="f"><span>Takeover vote length (hours)</span><input name="vote" type="number" min="0.02" step="0.01" value="24"></label>
           <label class="f"><span>Quorum (% of eligible stake)</span><input name="quorum" type="number" min="1" max="100" value="20"></label>
-          <label class="f"><span>Your bag vests over (days)</span><input name="vest" type="number" min="0" value="180"></label>
+          <label class="f"><span>Your tokens vest over (days)</span><input name="vest" type="number" min="0" value="180"></label>
           <label class="f"><span>Comeback penalty (NEAR)</span><input name="penalty" type="number" min="0" step="0.1" value="2"></label>
           <label class="f"><span>Treasury spend cap per week (NEAR)</span><input name="cap" type="number" min="0" step="0.1" value="1"></label>
           <label class="f"><span>Seed the treasury with (NEAR)</span><input name="seed" type="number" min="0" step="0.1" value="1"></label>
@@ -1281,6 +1284,10 @@ function bind(r) {
     };
     if ($("ecg")) startEcg();
   }
+  document.querySelectorAll("input[data-addr]").forEach((i) => {
+    const show = () => { i.nextElementSibling.textContent = i.value ? `Address: ${i.value}.${i.dataset.addr}` : ""; };
+    i.addEventListener("input", show); show();
+  });
   if (r.page === "connect") {
     on("b-check", async () => {
       CONNECT.token = $("c-token").value.trim(); CONNECT.info = null; CONNECT.err = "";
