@@ -52,7 +52,16 @@
   .me { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .guide { font-size: 13px; font-weight: 500; color: var(--dim); text-decoration: underline; text-underline-offset: 3px; }
   .guide:hover, .guide.on { color: var(--color-primary); }
-  @media (max-width: 720px) { nav { gap: 4px; } nav a { padding: 8px 10px; font-size: 14px; } .me { align-items: flex-start; } }
+  /* Phones: logo top left, wallet and guide top right, menu on its own row underneath. */
+  @media (max-width: 720px) {
+    header { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "brand me" "nav nav"; align-items: start; row-gap: 14px; }
+    header .brand { grid-area: brand; align-self: center; }
+    header .me { grid-area: me; align-items: flex-end; }
+    header nav { grid-area: nav; gap: 4px; overflow-x: auto; margin: 0 -6px; }
+    nav a { padding: 8px 10px; font-size: 14px; }
+    header #connect { padding: 8px 12px; font-size: 13px; }
+    header .me { align-items: center; gap: 3px; }
+    header .guide { font-size: 11px; text-underline-offset: 2px; } }
 
   /* Buttons and forms */
   button { font-family: var(--font-body); font-size: 14px; font-weight: 600; background: var(--color-white); color: var(--text);
