@@ -45,12 +45,18 @@
   .ph h2 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
   .ph p { margin: 4px 0 0; color: var(--dim); font-size: 14px; line-height: 1.5; max-width: 760px; }
   .label { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
-  .hero h1 { font-size: 44px; line-height: 1.05; margin: 6px 0 10px; }
+  .hero { grid-column: 1 / -1; padding: 28px 4px 10px; }
+  .hero h1 { font-size: clamp(34px, 5vw, 58px); line-height: 1.02; letter-spacing: -.02em; margin: 10px 0 16px; }
   .hero h1 em { font-style: normal; color: var(--alive); }
-  .hero p { color: var(--dim); max-width: 640px; line-height: 1.55; margin: 0; }
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
-  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } .hero h1 { font-size: 32px; } }
-  .stat .v { font-family: var(--mono); font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .hero p { color: var(--dim); max-width: 620px; font-size: 17px; line-height: 1.6; margin: 0; }
+  .hero .sim { font-size: 14px; margin-top: 14px; }
+  .watchhead { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px 32px; flex-wrap: wrap; margin-bottom: 6px; }
+  .watchhead .ph { margin: 0; }
+  .stats { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .stat { padding: 10px 18px; border-left: 1px solid var(--line); min-width: 112px; }
+  .stat:first-child { border-left: 0; }
+  .stat .v { font-family: var(--mono); font-size: 22px; font-weight: 700; margin-top: 2px; }
+  @media (max-width: 600px) { .stats { width: 100%; } .stat { flex: 1; min-width: 0; padding: 10px 10px; } .stat .label { font-size: 9.5px; letter-spacing: .08em; } }
   .coins { display: grid; gap: 8px; margin-top: 14px; }
   .coinrow, .coinhead { display: grid; grid-template-columns: 14px minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.3fr) minmax(0,.8fr); align-items: center; gap: 14px; padding: 14px 16px; }
   .coinrow { border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text); background: #0a0e10; }
@@ -682,22 +688,23 @@ async function watchView() {
       <span class="trend" style="--t:var(${col})" title="${word} · ${livesNote}"><b>${tri}</b><span class="hide-sm">${word}</span></span></a>`;
   };
   return `
-    <section class="panel full hero">
-      <div class="label">NEP-141 · Sputnik DAO · NEAR</div>
-      <h1>Community takeover, <em>onchain.</em></h1>
-      <p>The dev keeps the coin alive by posting a heartbeat on-chain. If the heartbeat stops, the coin flatlines
-        and holders can vote a DAO in to take over. If the vote passes, the dev's locked tokens are burned,
-        the treasury moves to the DAO and the coin gains a life. Only tokens held before the flatline can vote.</p>
-      ${DEMO ? `<p style="margin-top:12px">You're in the simulator. <a href="./">See the live coins on NEAR testnet</a>.</p>` : ""}
-      <div class="stats">
-        <div class="stat"><div class="label">Coins</div><div class="v">${live.length}</div></div>
-        <div class="stat"><div class="label">Flatlined now</div><div class="v" style="color:var(--dead)">${dead}</div></div>
-        <div class="stat"><div class="label">Open takeovers</div><div class="v" style="color:var(--vote)">${votes}</div></div>
-        <div class="stat"><div class="label">Lives restored</div><div class="v lives">${lives}</div></div>
-      </div>
+    <section class="hero">
+      <div class="label">Memecoins on NEAR</div>
+      <h1>Community takeover,<br><em>onchain.</em></h1>
+      <p>Every coin has a heartbeat its dev must keep posting. If it stops, holders vote a DAO in to take over:
+        the dev's locked tokens are burned and the coin comes back to life. Only holders from before the death get a vote.</p>
+      ${DEMO ? `<p class="sim">You're in the simulator. <a href="./">See the live coins on NEAR testnet</a>.</p>` : ""}
     </section>
     <section class="panel full">
-      ${ph("Flatline Watch", "Open takeovers first, then dead coins, then the coins closest to death.")}
+      <div class="watchhead">
+        ${ph("Flatline Watch", "Open takeovers first, then dead coins, then the coins closest to death.")}
+        <div class="stats">
+          <div class="stat"><div class="label">Coins</div><div class="v">${live.length}</div></div>
+          <div class="stat"><div class="label">Flatlined</div><div class="v" style="color:var(--dead)">${dead}</div></div>
+          <div class="stat"><div class="label">Takeovers</div><div class="v" style="color:var(--vote)">${votes}</div></div>
+          <div class="stat"><div class="label">Revivals</div><div class="v" style="color:var(--alive)">${lives}</div></div>
+        </div>
+      </div>
       <div class="coins">${rows.length ? `<div class="coinhead"><span></span><span>Coin</span><span class="hide-sm">Pulse</span><span>Shelf life</span><span>Trend</span></div>`
         + rows.map(row).join("") : `<div class="empty">No coins yet. <a href="#/launch">Launch the first one.</a></div>`}</div>
     </section>`;
