@@ -141,12 +141,16 @@
   /* Coin page */
   .monitor { position: relative; overflow: hidden; }
   .monitor-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  @media (max-width: 700px) { .monitor-top > div:last-child { text-align: left !important; flex-basis: 100%; } }
   .ci { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex: none; display: inline-grid; place-items: center;
     background: var(--color-light-blue, #EFF6FF); color: var(--color-primary, #2563EB); border: 1px solid var(--line);
     font: 700 15px var(--font-head); text-transform: uppercase; }
   .ci.lg { width: 56px; height: 56px; font-size: 22px; }
   .nm { display: flex; align-items: center; gap: 12px; min-width: 0; }
   .coinid { display: flex; align-items: center; gap: 16px; }
+  .links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .links a { font-size: 13px; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--text); text-decoration: none; background: var(--color-white); }
+  .links a:hover { border-color: var(--color-primary); color: var(--color-primary); }
   .up { display: flex; align-items: center; gap: 16px; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; background: var(--color-background-secondary); }
   .upr { display: grid; gap: 6px; min-width: 0; }
   .up .hint { margin: 0; }
@@ -168,7 +172,7 @@
   .tabs a.on { color: var(--color-primary); border-color: var(--color-primary); }
   .row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 15px; color: var(--muted); }
   .row:last-child { border-bottom: 0; }
-  .row b { font-family: var(--font-mono); font-weight: 500; color: var(--text); text-align: right; word-break: break-all; }
+  .row b { font-family: var(--font-mono); font-weight: 500; color: var(--text); text-align: right; overflow-wrap: anywhere; }
   .bar { height: 12px; background: var(--color-background-secondary); border: 1px solid var(--line); border-radius: 6px; position: relative; overflow: hidden; margin: 8px 0 4px; }
   .bar i { position: absolute; top: 0; bottom: 0; left: 0; }
   .bar .q { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); }
@@ -277,6 +281,14 @@ async function shrinkIcon(file) {
     if (u.length <= ICON_MAX) return u;
   }
   throw new Error("that image is too detailed to fit; try a simpler one");
+}
+// The links set at launch (website, X, Telegram): only http(s) URLs become links.
+function linksHtml(links) {
+  const urls = String(links || "").split(/[\s,]+/).filter((u) => /^https?:\/\/[^\s"'<>]+$/i.test(u)).slice(0, 4);
+  return urls.length ? `<div class="links">${urls.map((u) => {
+    let label = u; try { label = new URL(u).hostname.replace(/^www\./, ""); } catch {}
+    return `<a href="${esc(u)}" target="_blank" rel="noopener nofollow">${esc(label)} ↗</a>`;
+  }).join("")}</div>` : "";
 }
 let ICON_DATA = null;                                        // image picked on the Launch form or keeper panel
 const TOKEN_ICONS = new Map();                               // connected tokens' own icons
@@ -440,7 +452,7 @@ function ftEvents(txs, token) {
       if (!log.startsWith("EVENT_JSON:")) continue;
       let e; try { e = JSON.parse(log.slice(11)); } catch { continue; }
       if (e.standard !== "nep141" || !["ft_transfer", "ft_mint"].includes(e.event)) continue;
-      for (const d of e.data || []) out.push({ t: nsToS(eo.block_timestamp), amount: d.amount, to: d.new_owner_id || d.owner_id, from: d.old_owner_id || null });
+      for (const d of e.data || []) if (/^\d{1,40}$/.test(String(d.amount))) out.push({ t: nsToS(eo.block_timestamp), amount: d.amount, to: d.new_owner_id || d.owner_id, from: d.old_owner_id || null });
     }
   }
   return out;
@@ -487,11 +499,14 @@ function liveCoin(id) {
     weight: (a) => view(id, "get_vote_weight", { account_id: a }),
     ballot: (a) => view(id, "get_ballot", { account_id: a }),
     stakeOf: (a) => view(id, "get_stake", { account_id: a }),
-    wallet: (a) => view(last.token_id, "ft_balance_of", { account_id: a }),
+    wallet: async (a) => view((last || (last = await view(id, "get_status"))).token_id, "ft_balance_of", { account_id: a }),
     me: () => account,
     call: (method, args = {}, deposit = "0", gas = TGAS30) => sendTx(id, method, args, deposit, gas),
     // Stake and lock go through the token: ft_transfer_call to the guard with a msg.
-    send: (amount, msg) => sendTx(last.token_id, "ft_transfer_call", { receiver_id: id, amount, msg }, "1", TGAS100),
+    send: async (amount, msg) => {
+      if (!last) last = await view(id, "get_status");          // bind() may hold a fresh copy that hasn't read status yet
+      return sendTx(last.token_id, "ft_transfer_call", { receiver_id: id, amount, msg }, "1", TGAS100);
+    },
     async activity(S) { return liveActivity(id, S, await this.lore()); },
     async verify(S) {
       const parent = id.split(".").slice(1).join(".");
@@ -521,7 +536,7 @@ class Mock {
     this.cfg = { name: o.name, symbol: o.symbol, pulse_interval_secs: o.interval || 3 * DAY, vote_duration_secs: DAY, quorum_bps: 2000,
       comeback_penalty: (2n * YOCTO_NEAR).toString(), dao_suffix: ".sputnikv2.testnet", spend_cap: YOCTO_NEAR.toString() };
     this.born = t - (o.age || 0); this.lastPulse = t - (o.sincePulse || 0); this.lives = 0; this.treasury = 5n * YOCTO_NEAR; this.count = 0;
-    this.supply = T(1e9); this.devLocked = T(1e8); this.devBurned = 0n; this.devActive = true;
+    this.supply = T(1e9); this.devLocked = T(1e8); this.devBurned = 0n; this.devClaimed = 0n; this.devActive = true;
     const s = this.born;
     this.holders = { "dev.testnet": { bal: T(3e8), since: s }, "alice.testnet": { bal: T(3e8), since: s },
       "bob.testnet": { bal: T(2e8), since: s }, "carol.testnet": { bal: T(1e8), since: s }, "whale.testnet": { bal: 0n, since: s } };
@@ -559,9 +574,23 @@ class Mock {
   eligible(f) { return Object.keys(this.holders).filter((a) => a !== this.keeper && a !== this.creator).reduce((s, a) => s + this.w(a, f), 0n); }
   fail(m) { throw new Error(m); }
   buy(a, tokens) {
-    const amt = T(tokens), src = this.holders["dev.testnet"], h = this.holders[a];
+    const src = this.holders["dev.testnet"], h = this.holders[a];
+    if (!src || src.bal === 0n) this.fail("dev.testnet has nothing left to sell");
+    const amt = T(tokens) > src.bal ? src.bal : T(tokens);
     src.bal -= amt; const nb = h.bal + amt; h.since = Number((h.bal * BigInt(h.since) + amt * BigInt(this.t) + nb - 1n) / nb); h.bal = nb;
   }
+  // Creator tokens vest evenly over 180 days while the creator keeps the coin alive.
+  claim(by) {
+    if (by !== this.creator || this.keeper !== this.creator || !this.devActive) this.fail("only the living creator can claim");
+    if (this.st() !== "alive") this.fail("the coin is not alive");
+    const total = this.devLocked + this.devClaimed, age = BigInt(Math.max(0, Math.min(this.t - this.born, 180 * DAY)));
+    const amt = total * age / BigInt(180 * DAY) - this.devClaimed;
+    if (amt <= 0n) this.fail("nothing vested yet");
+    this.devLocked -= amt; this.devClaimed += amt; this.credit(by, amt);
+    this.log("claim", by, `creator claimed ${fmtTokens(amt)} vested $${this.cfg.symbol}`);
+    return amt.toString();
+  }
+  credit(a, amt) { const h = this.holders[a] || (this.holders[a] = { bal: 0n, since: this.t }); const nb = h.bal + amt; h.since = Number((h.bal * BigInt(h.since) + amt * BigInt(this.t) + nb - 1n) / nb); h.bal = nb; }
   pulse(by, deposit = 0n) {
     if (by !== this.keeper) this.fail("only the keeper has a pulse");
     if (this.t > this.flatlineAt()) {
@@ -614,8 +643,8 @@ class Mock {
     const circ = Object.values(this.holders).reduce((s, h) => s + h.bal, 0n);
     return { kind: "coin", status: this.st(), now: this.t, keeper: this.keeper, creator: this.creator, lives: this.lives, launched_at: this.born, last_pulse: this.lastPulse,
       flatline_at: this.flatlineAt(), total_supply: this.supply.toString(), circulating: circ.toString(), treasury: this.treasury.toString(),
-      dev_locked: this.devLocked.toString(), dev_burned: this.devBurned.toString(), takeover: this.takeover && { ...this.takeover },
-      takeover_count: this.count, config: this.cfg, icon: this.icon || null, links: REPO };
+      dev_locked: this.devLocked.toString(), dev_burned: this.devBurned.toString(), dev_claimed: this.devClaimed.toString(), takeover: this.takeover && { ...this.takeover },
+      takeover_count: this.count, config: this.cfg, icon: this.icon || null, links: this.links ?? REPO };
   }
   async lore() { return this.loreList.slice(-100); }
   async weight(a) { if (a === this.keeper || a === this.creator) return "0"; return this.w(a, this.takeover ? this.takeover.flatline_at : this.flatlineAt()).toString(); }
@@ -624,6 +653,7 @@ class Mock {
   async call(method, args = {}, deposit = "0") {
     const by = this.me();
     if (method === "pulse") return this.pulse(by, BigInt(deposit));
+    if (method === "claim_vested") return this.claim(by);
     if (method === "set_links") { if (by !== this.keeper) this.fail("only the keeper can change the links"); this.icon = args.icon; return; }
     if (method === "start_takeover") return this.startTakeover(by, args.steward);
     if (method === "vote") return this.vote(by, args.support);
@@ -653,7 +683,10 @@ class GuardMock extends Mock {
     this.holders["alice.testnet"].bal = T(2e8); this.holders["carol.testnet"].bal = T(5e7);
     this.log("lock", "dev.testnet", "creator locked 100M $" + this.cfg.symbol, this.born + 600);
   }
-  buy(a, n) { const amt = T(n); this.wallets["dev.testnet"] -= amt; this.wallets[a] = (this.wallets[a] || 0n) + amt; }
+  buy(a, n) {
+    const left = this.wallets["dev.testnet"] || 0n;
+    if (left === 0n) this.fail("dev.testnet has nothing left to sell");
+    const amt = T(n) > left ? left : T(n); this.wallets["dev.testnet"] -= amt; this.wallets[a] = (this.wallets[a] || 0n) + amt; }
   stake(by, amount) {
     const amt = BigInt(amount);
     if (by === this.keeper || by === this.creator) this.fail("the keeper and creator cannot stake");
@@ -675,8 +708,9 @@ class GuardMock extends Mock {
     const s = await super.status(), staked = Object.values(this.holders).reduce((n, h) => n + h.bal, 0n);
     delete s.total_supply; delete s.circulating;
     return { ...s, kind: "guard", token_id: this.token, staked: staked.toString(), stakers: Object.values(this.holders).filter((h) => h.bal > 0n).length,
-      dev_claimed: "0", config: { ...this.cfg, token_id: this.token, decimals: 18 } };
+      dev_claimed: this.devClaimed.toString(), config: { ...this.cfg, token_id: this.token, decimals: 18 } };
   }
+  credit(a, amt) { this.wallets[a] = (this.wallets[a] || 0n) + amt; }
   async stakeOf(a) { return (this.holders[a]?.bal || 0n).toString(); }
   async wallet(a) { return (this.wallets[a] || 0n).toString(); }
   async send(amount, msg) { const by = this.me(); if (msg === "lock") return this.lock(by, amount); if (msg === "stake") return this.stake(by, amount); this.fail("the guard only accepts lock or stake"); }
@@ -722,11 +756,17 @@ const demoRegistry = {
     if (!t) throw new Error(`${id} isn't a token on this network (in the simulator, try pepe.cooking.testnet)`);
     return { ...t, mine: ACTOR.value === "dev.testnet" ? t.supply : "0" };
   },
-  async launch(name, config) {
+  async launch(name, config, deposit) {
     const id = `${name}.revive.testnet`;
     if (MOCKS.some((m) => m.id === id)) throw new Error("a coin with that name already exists");
     const m = new Mock({ id, name: config.name, symbol: config.symbol, interval: config.pulse_interval_secs });
-    m.creator = m.keeper = "you.testnet"; m.icon = config.icon || null; MOCKS.push(m); return id;
+    Object.assign(m.cfg, { vote_duration_secs: config.vote_duration_secs, quorum_bps: config.quorum_bps,
+      comeback_penalty: config.comeback_penalty, spend_cap: config.spend_cap });
+    m.creator = m.keeper = "you.testnet"; m.icon = config.icon || null; m.links = config.links;
+    m.holders["you.testnet"] = m.holders["dev.testnet"]; delete m.holders["dev.testnet"];
+    m.loreList.forEach((l) => { l.note = String(l.note || "").replace("dev.testnet", "you.testnet"); if (l.actor === "dev.testnet") l.actor = "you.testnet"; });
+    if (deposit) m.treasury = BigInt(deposit) - LAUNCH_COST;
+    MOCKS.push(m); ACTOR.value = "you.testnet"; return id;
   },
   coin: (id) => MOCKS.find((m) => m.id === id),
 };
@@ -739,7 +779,7 @@ const REG = DEMO ? demoRegistry : liveRegistry;
 // ================================================================= views
 const COLORS = { alive: "--alive", flatlined: "--dead", voting: "--vote", vote_closed: "--vote" };
 const LABEL = { alive: "ALIVE", flatlined: "FLATLINED", voting: "TAKEOVER VOTE", vote_closed: "VOTE CLOSED" };
-const LORE_C = { lock: "--dao", born: "--alive", comeback: "--vote", flatline: "--dead", takeover: "--vote", takeover_failed: "--dead", revived: "--alive", spend: "--dao", links: "--dao" };
+const LORE_C = { lock: "--dao", born: "--alive", comeback: "--vote", flatline: "--dead", takeover: "--vote", takeover_failed: "--dead", revived: "--alive", spend: "--dao", links: "--dao", claim: "--dao" };
 const SPUTNIK = [".sputnikv2.testnet", ".sputnik-dao.near"];
 const isSputnik = (a) => SPUTNIK.some((x) => a.endsWith(x));
 const isDao = (a, s) => a.endsWith(s.config.dao_suffix);
@@ -748,14 +788,16 @@ const setAccent = (status) => document.documentElement.style.setProperty("--acce
 function route() {
   const h = location.hash.replace(/^#\/?/, "");
   const [page, a, b] = h.split("/");
-  if (!page && LEGACY_COIN && !FACTORY_ID) return { page: "coin", id: LEGACY_COIN, tab: "monitor" };
+  if (!page && LEGACY_COIN) return { page: "coin", id: LEGACY_COIN, tab: "monitor" };
   if (page === "coin") return { page: "coin", id: decodeURIComponent(a || ""), tab: b || "monitor" };
   return { page: page || "watch" };
 }
 
-let renderId = 0;
+let renderId = 0, LAST_PAGE = null, FX_PENDING = false;
 async function render() {
   const r = route(), my = ++renderId;
+  r.my = my;
+  if (r.page !== LAST_PAGE) { ICON_DATA = null; LAST_PAGE = r.page; }   // a picked image belongs to the page it was picked on
   document.querySelectorAll("[data-nav]").forEach((n) => n.classList.toggle("on", n.dataset.nav === r.page));
   $("connect").textContent = DEMO ? "Demo mode" : (account ? short(account) : "Connect wallet");
   $("connect").disabled = DEMO;
@@ -765,6 +807,7 @@ async function render() {
     if (my !== renderId) return;
     $("view").innerHTML = html;
     bind(r);
+    if (FX_PENDING) requestAnimationFrame(playFx);
   } catch (e) {
     if (my !== renderId) return;
     $("view").innerHTML = `<section class="panel full"><div class="status" style="--accent:var(--dead)">NO SIGNAL</div><p class="hint">${esc(e.message)}</p></section>`;
@@ -1004,6 +1047,7 @@ async function coinView(r) {
   if (!src) throw new Error("unknown coin " + r.id);
   const S = await src.status();
   if (S.kind === "guard" && !DEMO && !S.icon) S.icon = await tokenIcon(S.token_id);
+  if (r.my !== undefined && r.my !== renderId) return "";        // the user moved on; render() drops this
   window.__S = S;
   DEC = S.config.decimals ?? 18;
   const guard = S.kind === "guard";
@@ -1017,7 +1061,7 @@ async function coinView(r) {
       <div class="monitor-top">
         <div class="coinid">${iconHtml(S.icon, S.config.symbol, true)}<div><div class="label">Coin · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a>${guard
             ? ` · token <a href="${EXPLORER}/token/${esc(S.token_id)}" target="_blank" rel="noopener">${esc(short(S.token_id))}</a>` : ""}</div>
-          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small>${guard ? `<small class="tag">connected</small>` : ""}</div></div></div>
+          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small>${guard ? `<small class="tag">connected</small>` : ""}</div>${S.links === REPO ? "" : linksHtml(S.links)}</div></div>
         <div style="text-align:right"><div class="label">Status</div>
           <div class="status ${S.status === "flatlined" ? "blink" : ""}">${LABEL[S.status]}</div></div>
       </div>
@@ -1077,14 +1121,17 @@ async function takeoverPanel(src, S) {
 async function keeperPanel(src, S) {
   const me = src.me(), isKeeper = me === S.keeper, dead = S.now > S.flatline_at, guard = S.kind === "guard";
   const canLock = guard && me && me === S.creator && S.keeper === S.creator;
+  const canClaim = me && me === S.creator && S.keeper === S.creator && !dead && BigInt(S.dev_locked || 0) > 0n;
   const wallet = canLock ? BigInt(await src.wallet(me)) : 0n;
   return `<section class="panel">${ph("Keeper")}
     <div class="row"><span>Keeper</span><b style="color:${isDao(S.keeper, S) ? "var(--dao)" : "inherit"}">${esc(S.keeper)}</b></div>
     <div class="row"><span>Creator</span><b>${esc(S.creator)}</b></div>
     <div class="row"><span>${guard ? "Creator tokens locked" : "Creator tokens locked"}</span><b>${fmtTokens(S.dev_locked)}</b></div>
     <div class="row"><span>${guard ? "Creator tokens sealed" : "Creator tokens burned"}</span><b style="color:${BigInt(S.dev_burned) > 0n ? "var(--dead)" : "inherit"}">${fmtTokens(S.dev_burned)}</b></div>
+    ${BigInt(S.dev_claimed || 0) > 0n ? `<div class="row"><span>Creator tokens claimed</span><b>${fmtTokens(S.dev_claimed)}</b></div>` : ""}
     <div class="row"><span>Comeback penalty</span><b>${fmtNear(S.config.comeback_penalty)}</b></div>
-    <div class="actions">${isKeeper ? `<button class="primary" id="b-pulse" data-late="${dead ? 1 : ""}">${dead ? "Come back (pay penalty)" : "Pulse ♥"}</button>` : `<span class="hint">Only the keeper can pulse.</span>`}</div>
+    <div class="actions">${isKeeper ? `<button class="primary" id="b-pulse" data-late="${dead ? 1 : ""}">${dead ? "Come back (pay penalty)" : "Pulse ♥"}</button>` : `<span class="hint">Only the keeper can pulse.</span>`}
+      ${canClaim ? `<button id="b-claim">Claim vested tokens</button>` : ""}</div>
     ${canLock ? `<div class="stack"><div class="label">Lock your tokens · ${fmtTokens(wallet)} $${esc(S.config.symbol)} in your wallet</div>
       <input id="lock-amt" inputmode="decimal" placeholder="amount of $${esc(S.config.symbol)}">
       <button id="b-lock">Lock in the guard</button>
@@ -1305,7 +1352,7 @@ function directorPanel(id) {
   return `<section class="panel full director">
     ${ph("Simulator", `A simulated contract with the same rules.${id === MOCKS[0].id ? " Click the steps in order to play the story." : " The step-by-step story is on Nine Lives."}`)}
     <p class="hint">You are acting as <select id="actor" style="width:auto;display:inline-block">${["alice.testnet", "bob.testnet", "carol.testnet", "whale.testnet", "dev.testnet", REG.coin(id).keeper]
-      .filter((v, i, a) => a.indexOf(v) === i).map((a) => `<option ${a === ACTOR.value ? "selected" : ""}>${a}</option>`).join("")}</select>. Switch accounts to act as anyone.</p>
+      .filter((v, i, a) => a.indexOf(v) === i).map((a) => `<option ${a === ACTOR.value ? "selected" : ""}>${esc(a)}</option>`).join("")}</select>. Switch accounts to act as anyone.</p>
     ${id === MOCKS[0].id ? `<div class="steps">${STORY.map(([l], i) => `<button data-i="${i}">${l}</button>`).join("")}</div>` : ""}
     <div class="actions"><button data-skip="21600">⏩ +6 hours</button><button data-skip="86400">⏩ +1 day</button>
       ${REG.coin(id) instanceof GuardMock ? `<button data-buy="1">Whale buys 250M $${esc(REG.coin(id).cfg.symbol)}</button>` : ""}</div>
@@ -1345,11 +1392,12 @@ function bind(r) {
   };
   if (r.page === "coin") {
     const src = REG.coin(r.id), S = window.__S;
-    const act = async (method, args, deposit, ok) => {
-      try { await src.call(method, args, deposit); toast(ok); }
+    const act = async (method, args, deposit, ok, gas) => {
+      try { await src.call(method, args, deposit, gas); toast(ok); }
       catch (e) { toast(String(e.message || e).replace(/^.*Smart contract panicked: /, ""), true); }
       await render();
     };
+    on("b-claim", () => act("claim_vested", {}, "0", "Vested tokens sent to your wallet.", S.kind === "guard" ? TGAS100 : undefined));
     on("b-icon", () => { if (ICON_DATA) act("set_links", { icon: ICON_DATA, links: S.links ?? null }, "0", "Image updated."); ICON_DATA = null; });
     on("b-pulse", () => { const late = $("b-pulse").dataset.late; act("pulse", {}, late ? S.config.comeback_penalty : "0", late ? "Back from the dead. Penalty paid to the treasury." : "Pulse sent. Still alive."); });
     on("b-start", () => act("start_takeover", { steward: $("steward").value.trim() }, "0", "Takeover opened. Holders, vote."));
@@ -1429,7 +1477,8 @@ function bind(r) {
   }
 }
 
-function revivedFx() { const f = $("flash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); } ecg.kick = 1; }
+function revivedFx() { FX_PENDING = true; }
+function playFx() { FX_PENDING = false; const f = $("flash"); if (f) { f.classList.remove("go"); void f.offsetWidth; f.classList.add("go"); } ecg.kick = 1; }
 
 // ==================================================================== ECG
 const ecg = { x: 0, kick: 0, last: [], running: false };
@@ -1486,7 +1535,18 @@ if (!DEMO) {
     if (account) { const w = await connector.wallet(); await w.signOut(); account = null; render(); }
     else connector.connect();
   };
-  setInterval(() => { if (!document.activeElement || !["INPUT", "SELECT"].includes(document.activeElement.tagName)) render(); }, 8000);
+  // Live data refreshes every 8 s on Flatline Watch and coin pages, but never while someone is busy:
+  // typing, a changed field, a picked image or an open table all pause it.
+  const busy = () => {
+    const page = route().page;
+    if (!["watch", "coin"].includes(page) || document.hidden) return true;
+    const a = document.activeElement;
+    if (a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName)) return true;
+    if (ICON_DATA || document.querySelector("#view details[open]")) return true;
+    return [...document.querySelectorAll("#view input, #view textarea")].some((i) => i.type !== "file" && i.value !== i.defaultValue)
+      || [...document.querySelectorAll("#view select")].some((x) => x.id !== "actor" && [...x.options].some((o) => o.selected !== o.defaultSelected));
+  };
+  setInterval(() => { if (!busy()) render(); }, 8000);
 }
 render();
 </script>
