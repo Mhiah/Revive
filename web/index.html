@@ -207,6 +207,22 @@
   @keyframes flash { 0% { opacity: .18; } 100% { opacity: 0; } }
   .hint { color: var(--dim); font-size: 14px; line-height: 1.6; }
   .steps-how { counter-reset: s; display: grid; gap: 14px; margin-top: 12px; }
+  .guidep .gsec { padding-top: 30px; margin-top: 28px; border-top: 1px solid var(--line); scroll-margin-top: 90px; }
+  .gtoc { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .gtoc button { font-size: 13px; padding: 6px 12px; border-radius: 999px; }
+  .gp { line-height: 1.65; color: var(--muted); max-width: 76ch; margin: 10px 0 0; }
+  .gp b, .gp i { color: var(--text); }
+  .roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+  .roles div { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--color-background-secondary); }
+  .roles b { display: block; margin-bottom: 6px; } .roles span { color: var(--muted); line-height: 1.55; font-size: 14px; }
+  .gvid { width: 100%; max-width: 960px; display: block; margin-top: 14px; border-radius: 12px; border: 1px solid var(--line); background: #F8FAFC; }
+  .gtab { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+  .gtab th { text-align: left; vertical-align: top; width: 190px; padding: 10px 14px 10px 0; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--line); }
+  .gtab td { padding: 10px 0; color: var(--muted); line-height: 1.55; border-bottom: 1px solid var(--line); }
+  .gtab code, .steps-how code { font-family: var(--font-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+  .faq details { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .faq summary { cursor: pointer; font-weight: 600; } .faq p { margin: 8px 0 0; color: var(--muted); line-height: 1.6; }
+  @media (max-width: 700px) { .roles { grid-template-columns: 1fr; } .gtab th { width: 112px; } }
   .steps-how div { counter-increment: s; padding-left: 44px; position: relative; line-height: 1.6; color: var(--muted); }
   .steps-how div b { color: var(--text); }
   .steps-how div::before { content: counter(s); position: absolute; left: 0; top: 0; width: 30px; height: 30px; border-radius: 50%;
@@ -1067,26 +1083,120 @@ function readConnect(form) {
 // ------------------------------------------------------------------- How
 function howView() {
   setAccent("alive");
+  const sec = (id, title, sub, body) => `<div class="gsec" id="g-${id}">${ph(title, sub)}${body}</div>`;
+  const rows = (r) => `<table class="gtab"><tbody>${r.map(([a, b]) => `<tr><th>${a}</th><td>${b}</td></tr>`).join("")}</tbody></table>`;
+  const toc = [["what", "What Revive is"], ["video", "Video: launch a coin"], ["start", "Before you start"], ["launch", "Launch a coin"],
+    ["keep", "Keep it alive"], ["takeover", "Take over a dead coin"], ["connect", "Coins launched elsewhere"], ["read", "Reading a coin"],
+    ["costs", "What things cost"], ["faq", "Questions"]];
   return `
-    <section class="panel full">
-      ${ph("User guide", "How a coin lives, dies and comes back.")}
+    <section class="panel full guidep">
+      ${ph("User guide", "What Revive is, and everything you can do with it.")}
+      <nav class="gtoc">${toc.map(([id, t]) => `<button data-jump="g-${id}">${t}</button>`).join("")}</nav>
+
+      ${sec("what", "What Revive is", "A memecoin launchpad where a community takeover is built into the coin.", `
+      <p class="gp">Most memecoins die the same way: the dev goes quiet and holders are left with a coin nobody runs.
+        A "community takeover" today means a new group starting over off-chain, with no claim on the treasury or the dev's tokens.</p>
+      <p class="gp">On Revive the dev has to show they're still there. They send a <b>pulse</b> on-chain before every deadline.
+        If the pulse stops, the coin <b>flatlines</b>, and the people who held it <i>before</i> it died can vote a Sputnik DAO in as the new keeper.
+        If the vote passes, the dev's locked tokens are burned, the treasury and the coin's links move to the DAO, and the coin gains a <b>life</b>.
+        It all lives in the coin's own contract: no admin, no server, nothing to take on trust.</p>
+      <div class="roles">
+        <div><b>Creator</b><span>Launches the coin and is its first keeper. Their share (up to 10%) stays locked and vests only while they keep pulsing.</span></div>
+        <div><b>Holders</b><span>Vote with the tokens they held before the coin died, weighted by how long they held them.</span></div>
+        <div><b>DAO</b><span>A Sputnik DAO the holders vote in. It becomes the keeper and must keep pulsing too, by proposal.</span></div>
+      </div>`)}
+
+      ${sec("video", "Launch a coin, start to finish", "Filmed in the simulator, so no wallet is involved. On testnet your wallet asks you to confirm.", `
+      <video class="gvid" src="media/launch-a-coin.mp4" poster="media/launch-a-coin.jpg" controls playsinline preload="none"></video>`)}
+
+      ${sec("start", "Before you start", "Revive runs on NEAR testnet. Test NEAR is free.", `
       <div class="steps-how">
-        <div><b>Pulse.</b> The keeper (at first, the creator) sends an on-chain pulse before every deadline. On time, it's free.</div>
-        <div><b>Flatline.</b> Miss the deadline and the coin flatlines. The keeper can no longer spend the treasury, claim tokens or change links.</div>
-        <div><b>Takeover.</b> Any holder from before the flatline can nominate a Sputnik DAO as the new keeper. That opens a vote.</div>
-        <div><b>Who votes.</b> Your vote counts by how many tokens you held and for how long, up to the moment the coin died. Tokens bought after that count for nothing, and moving them to another wallet doesn't help.</div>
-        <div><b>Comeback.</b> While the vote is open, the old keeper can still come back, but pays a penalty into the treasury and the vote is cancelled.</div>
-        <div><b>Revival.</b> If yes wins and reaches quorum, the DAO becomes keeper, the creator's locked tokens are burned and the coin gains a life. The DAO has to keep pulsing too.</div>
-        <div><b>Lore.</b> Every birth, death, takeover and revival is recorded on-chain, so a coin's history is part of its meme.</div>
+        <div><b>Get a testnet wallet.</b> Click <b>Connect wallet</b> at the top right and pick a NEAR wallet. Create a testnet account in it if you don't have one.</div>
+        <div><b>Get test NEAR.</b> Testnet NEAR is free from a NEAR testnet faucet. Launching a coin needs about 3.5 NEAR.</div>
+        <div><b>Or just look around.</b> The <a href="?demo#/">simulator</a> runs the same rules with no wallet. Open <b>Nine Lives</b> and click the story steps in order.</div>
+      </div>`)}
+
+      ${sec("launch", "Launch a coin", "Everything except the image and links is fixed for good at launch.", `
+      <div class="steps-how">
+        <div><b>Open <a href="#/launch">Launch</a></b> and connect your wallet.</div>
+        <div><b>Fill in the form</b> (what each field means is below). The defaults are the ones our 60-day simulation picked.</div>
+        <div><b>Click Launch coin</b> and confirm in your wallet. You'll attach the storage cost (about 2.4 NEAR) plus your treasury seed.</div>
+        <div><b>You're the keeper now.</b> Your coin is on Flatline Watch with its first heartbeat. Pulse before every deadline.</div>
       </div>
-      <div class="ph" style="margin-top:26px"><h2>Coins launched elsewhere</h2></div>
+      ${rows([
+        ["Coin image", "Optional. Cropped square, shrunk to 96×96 and stored inside the coin, so wallets and explorers show it."],
+        ["Account name", "The coin's address: <code>yourname.revive-5svgh.revive.testnet</code>. Lowercase letters, numbers, - and _."],
+        ["Coin name, symbol", "What people see, e.g. Pulse Cat, $PCAT."],
+        ["Total supply", "How many tokens exist. You receive all of them except your locked share."],
+        ["Your locked share", "Up to 10%. Locked in the coin, vesting while you keep pulsing. Burned if holders take over."],
+        ["Vesting", "How long the locked share takes to unlock: at least 4 heartbeats. 180 days by default."],
+        ["Pulse every", "Your deadline: miss it and the coin flatlines. Up to 30 days. 7 days if you pulse by hand, 3 if a bot does."],
+        ["Vote length", "How long a takeover vote stays open. Up to 30 days."],
+        ["Quorum", "How much of the before-death weight must vote yes. 10% is the recommended default."],
+        ["Comeback penalty", "What you pay into the treasury to come back after a flatline (at least 0.01 NEAR). It also cancels an open vote."],
+        ["Spend cap", "The most the keeper can spend from the treasury each week."],
+        ["Treasury seed", "NEAR you add to the coin's treasury on day one."],
+        ["Links", "Website, X, Telegram. Shown under the coin's name and handed to the DAO on a takeover."],
+      ])}`)}
+
+      ${sec("keep", "Keep it alive", "What the keeper can do, from the Keeper box on the coin's page.", `
       <div class="steps-how">
-        <div><b>Connect.</b> On <a href="#/connect">Connect a coin</a>, paste the token's account. Revive sets up a guard next to it; the token itself doesn't change.</div>
-        <div><b>Lock.</b> The creator locks their tokens in the guard. They vest only while the creator keeps pulsing.</div>
-        <div><b>Stake.</b> Holders stake in the guard to get a vote. Unstaking is always open, but only stake from before the flatline counts.</div>
+        <div><b>Pulse.</b> Click <b>Pulse ♥</b> before the deadline. On time it costs only gas. Set a reminder, or run a scheduled job that pulses for you.</div>
+        <div><b>Come back late.</b> After a flatline you can still pulse, but you pay the comeback penalty into the treasury, and any open takeover vote is cancelled.</div>
+        <div><b>Claim vested tokens.</b> Your locked share unlocks bit by bit. Click <b>Claim vested tokens</b> to move what has vested to your wallet. Only while you're alive and still keeper.</div>
+        <div><b>Change the image.</b> In the Keeper box, choose a new image and save it. Your wallet attaches a little NEAR for its storage; the rest is refunded.</div>
+        <div><b>Spend the treasury.</b> The keeper can pay out treasury NEAR within the weekly cap, for example to reward the community.</div>
+      </div>`)}
+
+      ${sec("takeover", "Take over a dead coin", "For holders, once the coin has flatlined.", `
+      <div class="steps-how">
+        <div><b>Check your weight.</b> On the coin's page, the Takeover box shows <b>your vote weight</b>: tokens you held before the death × how long you held them. Tokens bought after the death count for nothing.</div>
+        <div><b>Make a Sputnik DAO.</b> The new keeper must be a Sputnik DAO (on testnet, an account ending in <code>.sputnikv2.testnet</code>). Creating one costs about 5.6 NEAR; put holders you trust on its council.</div>
+        <div><b>Open the takeover.</b> Paste the DAO's address and click <b>Start takeover</b>. You attach a 0.1 NEAR bond: it comes back if the takeover passes or the dev returns, and goes to the coin's treasury if it fails.</div>
+        <div><b>Vote.</b> Every holder from before the death votes yes or no while the vote is open. Each ballot pays a tiny storage fee (about 0.0025 NEAR).</div>
+        <div><b>Finalize.</b> When the vote closes, anyone clicks <b>Finalize</b>. If yes beats no and reaches the quorum, the DAO becomes keeper, the creator's locked tokens burn and the coin gains a life.</div>
+        <div><b>Keep it alive.</b> The DAO now pulses by proposal. If it stops, the coin can die and be taken over again.</div>
+      </div>`)}
+
+      ${sec("connect", "Coins launched elsewhere", "Any NEP-141 token, for example from meme.cooking, can get the same rules.", `
+      <div class="steps-how">
+        <div><b>Connect.</b> On <a href="#/connect">Connect a coin</a>, paste the token's account and check it. Revive sets up a <b>guard</b> next to the token; the token itself doesn't change.</div>
+        <div><b>Lock.</b> The creator locks their tokens in the guard. They vest only while the creator keeps pulsing, and tokens locked later vest from when they arrive.</div>
+        <div><b>Stake.</b> Holders stake in the guard to get a vote. The first time, your wallet also registers you with the guard (0.002 NEAR). You can unstake whenever you like, but only stake from before the flatline counts.</div>
         <div><b>Revival.</b> Same takeover rules. If holders win, the creator's locked tokens stay sealed in the guard for good.</div>
-      </div>
-      <p class="hint" style="margin-top:18px">Code, tests and limits: <a href="${REPO}" target="_blank" rel="noopener">${REPO}</a></p>
+        <div><b>Check who connected it.</b> Anyone can connect any token, so look at the guard's creator on its Verify tab before you stake.</div>
+      </div>`)}
+
+      ${sec("read", "Reading a coin", "What each part of the site tells you.", rows([
+        ["Flatline Watch", "Every coin: its pulse (alive, flatlined, voting), shelf life until the next deadline, and trend. Open takeovers come first."],
+        ["Monitor", "The live heart monitor: green alive, red flatlined, amber voting. Plus lives, treasury, supply, the takeover and the keeper."],
+        ["Activity", "Transfers over time, with every pulse, death, vote and revival marked. Switch to a table if you prefer numbers."],
+        ["Verify", "Checks read straight from NEAR: no keys on the coin, same code as every Revive coin, a locked factory, the treasury backed, supply adding up, and safe settings."],
+        ["Lore", "The coin's history, written on-chain: every birth, death, takeover and revival."],
+      ]))}
+
+      ${sec("costs", "What things cost", "Testnet NEAR. Storage costs NEAR on NEAR; unused deposits are refunded.", rows([
+        ["Launch a coin", "About 2.4 NEAR for storage, plus your treasury seed"],
+        ["Connect a coin", "About 2.3 NEAR, plus your treasury seed"],
+        ["Pulse on time", "Gas only"],
+        ["Come back late", "The coin's comeback penalty, into its treasury"],
+        ["Open a takeover", "0.1 NEAR bond (back if it passes or the dev returns) plus about 0.009 NEAR storage"],
+        ["Vote / finalize", "About 0.0025 / 0.004 NEAR storage"],
+        ["Hold a Revive coin", "0.002 NEAR once, to register with the coin (0.00125 on earlier coins)"],
+        ["Stake in a guard", "0.002 NEAR once, to register with the guard"],
+        ["New coin image", "About 0.04 NEAR storage for a full-size image"],
+      ]))}
+      <p class="hint">Coins from earlier factories (before 10 November) don't take the takeover bond or storage fees.</p>
+
+      ${sec("faq", "Questions", "", `
+      <div class="faq">
+        <details><summary>Can someone buy tokens after a coin dies and swing the vote?</summary><p>No. Only tokens held before the flatline count, weighted by how long they were held. Moving them to another wallet doesn't help either.</p></details>
+        <details><summary>Can the dev vote on their own takeover?</summary><p>No. The creator and the keeper can't vote or open a takeover.</p></details>
+        <details><summary>Can the rules change after launch?</summary><p>No. The coin has no keys and no admin, and the factory that made it is locked. Only the image and links can change, by the keeper.</p></details>
+        <details><summary>What if the DAO stops pulsing?</summary><p>The coin flatlines again and holders can vote in a new DAO. Each revival adds a life.</p></details>
+        <details><summary>Does a takeover move the X account or website?</summary><p>No. Revive moves what lives on-chain: the keeper role, treasury, links, icon and the dev's locked tokens.</p></details>
+        <details><summary>Is it on mainnet?</summary><p>Not yet. Revive runs on testnet and hasn't been audited. Code, tests and known limits: <a href="${REPO}" target="_blank" rel="noopener">GitHub</a>.</p></details>
+      </div>`)}
     </section>`;
 }
 
@@ -1534,6 +1644,7 @@ function bind(r) {
       };
     }
   }
+  document.querySelectorAll("[data-jump]").forEach((b) => b.onclick = () => document.getElementById(b.dataset.jump)?.scrollIntoView({ behavior: "smooth" }));
   if (r.page === "launch") {
     const form = $("launch");
     const cost = () => { try { const { deposit } = readLaunch(form); $("cost").textContent = `You'll attach ${fmtNear(deposit)} (${fmtNear(LAUNCH_COST)} storage + treasury seed).`; } catch {} };
