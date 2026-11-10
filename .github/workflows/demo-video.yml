@@ -2,6 +2,8 @@ name: demo-video
 on:
   push:
     branches: [demo-video]
+permissions:
+  contents: write
 jobs:
   film:
     runs-on: ubuntu-latest
@@ -16,5 +18,10 @@ jobs:
           python -m http.server 8080 >/dev/null 2>&1 &
           sleep 1
           python video/film.py
-      - uses: actions/upload-artifact@v4
-        with: { name: scenes, path: out/ }
+      - name: Save the clips to the demo-video-out branch
+        run: |
+          mkdir /tmp/pub && cp -r out/* /tmp/pub/ && cd /tmp/pub
+          git init -q && git checkout -q -b demo-video-out
+          git -c user.name=Mhiah -c user.email=192190660+Mhiah@users.noreply.github.com add -A
+          git -c user.name=Mhiah -c user.email=192190660+Mhiah@users.noreply.github.com commit -q -m "Demo video clips"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" demo-video-out

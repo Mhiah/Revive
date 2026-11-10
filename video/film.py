@@ -38,9 +38,14 @@ class Scene:
         if hold: await self.pg.wait_for_timeout(int(hold * 1000))
     async def badge(self, live): await self.pg.evaluate("l => window.__badge && window.__badge(l)", live)
     async def to(self, sel, click=True, steps=28, dx=None):
-        el = self.pg.locator(sel).first
-        await el.scroll_into_view_if_needed(); await self.pg.wait_for_timeout(250)
-        bb = await el.bounding_box()
+        for attempt in range(4):          # pages that refresh themselves can swap the element out
+            try:
+                el = self.pg.locator(sel).first
+                await el.scroll_into_view_if_needed(timeout=4000); await self.pg.wait_for_timeout(250)
+                bb = await el.bounding_box()
+                if bb: break
+            except Exception:
+                await self.pg.wait_for_timeout(400)
         x = bb["x"] + (dx if dx is not None else min(46, bb["width"] / 2)); y = bb["y"] + bb["height"] / 2
         await self.pg.mouse.move(x, y, steps=steps)
         if click:
