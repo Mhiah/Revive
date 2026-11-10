@@ -1,0 +1,86 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=DM+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root { --blue:#2563EB; --ink:#0B0F19; --mut:#64748B; --line:#E2E8F0; --green:#15803D; --red:#B91C1C; --amber:#B45309; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; background: #fff; font-family: "DM Sans", sans-serif; color: var(--ink); }
+  .card { position: absolute; inset: 0; padding: 88px 110px; display: none; flex-direction: column; justify-content: center; }
+  .card.on { display: flex; }
+  .in { opacity: 0; transform: translateY(14px); animation: in .7s ease forwards; }
+  @keyframes in { to { opacity: 1; transform: none; } }
+  h1 { font: 700 64px/1.08 "Space Grotesk"; letter-spacing: -1.5px; }
+  h1 em { font-style: normal; color: var(--blue); }
+  h2 { font: 700 46px/1.12 "Space Grotesk"; letter-spacing: -1px; }
+  p.lead { font-size: 26px; line-height: 1.5; color: var(--mut); margin-top: 22px; max-width: 900px; }
+  .tag { font: 500 15px "IBM Plex Mono"; letter-spacing: 1.5px; color: var(--mut); text-transform: uppercase; margin-bottom: 18px; }
+  .lines div { font-size: 30px; line-height: 1.45; margin-top: 16px; color: var(--ink); }
+  .lines div b { color: var(--red); }
+  .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; margin-top: 40px; }
+  .rule { border: 1px solid var(--line); border-radius: 18px; padding: 26px 26px 28px; background: #F8FAFC; }
+  .rule .k { font: 700 30px "Space Grotesk"; display: flex; align-items: center; gap: 12px; }
+  .rule .k i { font-style: normal; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-size: 20px; }
+  .rule p { font-size: 20px; line-height: 1.5; color: var(--mut); margin-top: 12px; }
+  .trust { display: grid; grid-template-columns: 1fr 520px; gap: 46px; align-items: center; margin-top: 30px; }
+  .trust ul { list-style: none; padding: 0; }
+  .trust li { font-size: 23px; line-height: 1.4; padding: 13px 0 13px 40px; position: relative; border-bottom: 1px solid var(--line); }
+  .trust li::before { content: "✓"; position: absolute; left: 0; top: 12px; color: var(--green); font-weight: 700; font-size: 24px; }
+  .trust img { width: 520px; border: 1px solid var(--line); border-radius: 12px; }
+  .logo { height: 86px; }
+  .links { margin-top: 34px; font: 500 26px "IBM Plex Mono"; line-height: 1.7; color: var(--ink); }
+  .links span { color: var(--blue); }
+  .small { font-size: 18px; color: var(--mut); margin-top: 26px; }
+</style></head><body>
+
+<section class="card" id="title">
+  <img class="logo in" src="../web/img/revive-logo.png" alt="">
+  <h1 class="in" style="margin-top:44px;animation-delay:.35s">Community takeover, <em>onchain.</em></h1>
+  <p class="lead in" style="animation-delay:.8s">A memecoin launchpad on NEAR where the dev has to stay alive, or the holders take over.</p>
+</section>
+
+<section class="card" id="problem">
+  <div class="tag in">The problem</div>
+  <h2 class="in" style="animation-delay:.2s">Most memecoins die the same way.</h2>
+  <div class="lines">
+    <div class="in" style="animation-delay:1.1s">The dev goes quiet.</div>
+    <div class="in" style="animation-delay:2.2s">Holders are left with a coin <b>nobody runs</b>.</div>
+    <div class="in" style="animation-delay:3.6s">A "community takeover" today starts over off-chain, with no treasury and no claim on the dev's tokens.</div>
+  </div>
+</section>
+
+<section class="card" id="idea">
+  <div class="tag in">How Revive works</div>
+  <h2 class="in" style="animation-delay:.2s">Three rules, written into every coin.</h2>
+  <div class="rules">
+    <div class="rule in" style="animation-delay:1s"><div class="k"><i style="background:var(--green)">♥</i>Pulse</div><p>The dev sends a heartbeat on-chain before every deadline.</p></div>
+    <div class="rule in" style="animation-delay:2.6s"><div class="k"><i style="background:var(--red)">✕</i>Flatline</div><p>Miss a deadline and the coin flatlines. Anyone can see it.</p></div>
+    <div class="rule in" style="animation-delay:4.2s"><div class="k"><i style="background:var(--blue)">↻</i>Takeover</div><p>Holders from before the death vote a Sputnik DAO in. The dev's locked tokens burn, the treasury moves, the coin gains a life.</p></div>
+  </div>
+</section>
+
+<section class="card" id="trust">
+  <div class="tag in">Why you can trust it</div>
+  <h2 class="in" style="animation-delay:.2s">Nothing to take on trust.</h2>
+  <div class="trust">
+    <ul>
+      <li class="in" style="animation-delay:.9s">No keys on any coin or factory. The rules can't change.</li>
+      <li class="in" style="animation-delay:1.7s">Every coin's code, treasury and supply are checked live on its Verify tab.</li>
+      <li class="in" style="animation-delay:2.5s">162 tests, including attacks and random 600-step histories.</li>
+      <li class="in" style="animation-delay:3.3s">A 60-day simulation on the real contract picked the default settings.</li>
+    </ul>
+    <img class="in" style="animation-delay:4.1s" src="../docs/simulation.png" alt="">
+  </div>
+</section>
+
+<section class="card" id="close">
+  <img class="logo in" src="../web/img/revive-logo.png" alt="">
+  <h1 class="in" style="margin-top:40px;animation-delay:.3s">Dead coins can <em>come back.</em></h1>
+  <div class="links in" style="animation-delay:.9s"><span>mhiah.github.io/Revive</span><br>github.com/Mhiah/Revive</div>
+  <p class="small in" style="animation-delay:1.4s">Built at NEAR HACKATHON · runs on NEAR testnet</p>
+</section>
+
+<script>
+  const id = new URLSearchParams(location.search).get("s") || "title";
+  document.getElementById(id).classList.add("on");
+</script>
+</body></html>
