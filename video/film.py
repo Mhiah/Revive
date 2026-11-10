@@ -149,16 +149,19 @@ async def s_civic(sc):
     await sc.scroll(0); await sc.to("#view .tabs >> text=Lore"); await sc.wait(1.8)
     await sc.say("Its on-chain history: flatline, takeover, votes, revival", 0); await sc.scroll(260); await sc.wait(2.6)
     await sc.say("Then the DAO pulsed and paid a holder, each by proposal", 0); await sc.scroll(520); await sc.wait(2.8)
-    await sc.scroll(0); await sc.to("#view .tabs >> text=Verify"); await sc.wait(3.2)
-    await sc.say("Verify reads it straight from NEAR: no keys, same code, keeper is a DAO", 0); await sc.scroll(300); await sc.wait(3.8)
+    await sc.scroll(0); await sc.to("#view .tabs >> text=Verify"); await sc.wait(3.0)
+    await sc.say("Verify reads it straight from NEAR: no keys, same code, locked factory", 0); await sc.scroll(300); await sc.wait(3.0)
+    await sc.say("…and the keeper really is a Sputnik DAO", 0); await sc.scroll(640); await sc.wait(3.4)
 
 async def s_meme(sc):
     pg = sc.pg
     await coin_live(sc, MEME); await sc.badge(True); await pg.mouse.move(640, 300); await sc.wait(1.4)
     await sc.say("Coins launched elsewhere can get the same rules", 2.6)
     await sc.say("Meme Cooked is a plain NEP-141 token with a Revive guard next to it", 3)
-    await sc.to("#view .tabs >> text=Verify"); await sc.wait(3)
-    await sc.say("The token itself is untouched; the guard holds every staked token", 0); await sc.scroll(330); await sc.wait(3.6)
+    await sc.say("Holders staked 800M in the guard to get a vote; the token itself is untouched", 0)
+    await sc.to("#view >> text=STAKED", click=False, steps=20); await sc.wait(3)
+    await sc.to("#view .tabs >> text=Activity"); await sc.wait(1.5)
+    await sc.say("Its activity, with the flatline and takeover marked", 0); await sc.scroll(330); await sc.wait(3.4)
 
 SCENES = [("01_title", s_title, False), ("02_problem", s_problem, False), ("03_idea", s_idea, False), ("04_watch", s_watch, True),
           ("05_launch", s_launch, True), ("06_story", s_story, True), ("07_comeback", s_comeback, True), ("08_civic", s_civic, True),
