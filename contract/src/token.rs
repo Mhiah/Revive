@@ -6,7 +6,8 @@ use crate::*;
 use near_sdk::{assert_one_yocto, ext_contract, Gas, PromiseError, PromiseOrValue};
 
 /// Flat storage fee per account, refundable on unregister.
-pub const STORAGE_COST: u128 = 1_250_000_000_000_000_000_000; // 0.00125 NEAR
+/// Covers a holder entry for the longest account name (64 chars), with room to spare.
+pub const STORAGE_COST: u128 = 2_000_000_000_000_000_000_000; // 0.002 NEAR
 const GAS_FOR_FT_ON_TRANSFER: Gas = Gas::from_tgas(30);
 const GAS_FOR_RESOLVE: Gas = Gas::from_tgas(10);
 
@@ -126,7 +127,7 @@ impl Revive {
         let refund = if self.holders.contains_key(&account) {
             deposit
         } else {
-            require!(deposit >= STORAGE_COST, "attach at least 0.00125 NEAR to register");
+            require!(deposit >= STORAGE_COST, "attach at least 0.002 NEAR to register");
             self.holders.insert(account, Holder { balance: 0, since: now() });
             deposit - STORAGE_COST
         };

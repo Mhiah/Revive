@@ -37,6 +37,11 @@ impl World {
             .account_balance(NearToken::from_yoctonear(100 * NEAR));
         testing_env!(b.build());
     }
+    /// Same caller and time, a different attached deposit.
+    fn pay(&self, deposit: u128) {
+        let who = self.who.borrow().clone();
+        self.at(&who, deposit);
+    }
     /// Move the clock; the last caller stays the caller.
     fn wait(&mut self, secs: u64) {
         self.t += secs;
@@ -65,6 +70,35 @@ fn launch(w: &World) -> Revive {
         dao_suffix: ".sputnikv2.testnet".into(),
         creator: None,
     })
+}
+
+/// The takeover calls with the NEAR they need attached (bond, storage), as the app sends them.
+/// The deposit is cleared afterwards so later calls in a test attach nothing by accident.
+pub(crate) const POCKET: u128 = NEAR / 100;
+trait TakeoverCalls {
+    fn t_start(&mut self, w: &World, steward: AccountId) -> Takeover;
+    fn t_vote(&mut self, w: &World, support: bool) -> Ballot;
+    fn t_finalize(&mut self, w: &World) -> bool;
+}
+impl TakeoverCalls for Revive {
+    fn t_start(&mut self, w: &World, steward: AccountId) -> Takeover {
+        w.pay(TAKEOVER_BOND + POCKET);
+        let r = self.start_takeover(steward);
+        w.pay(0);
+        r
+    }
+    fn t_vote(&mut self, w: &World, support: bool) -> Ballot {
+        w.pay(POCKET);
+        let r = self.vote(support);
+        w.pay(0);
+        r
+    }
+    fn t_finalize(&mut self, w: &World) -> bool {
+        w.pay(POCKET);
+        let r = self.finalize_takeover();
+        w.pay(0);
+        r
+    }
 }
 
 fn register(c: &mut Revive, w: &World, who: &str) {
@@ -158,7 +192,7 @@ fn no_takeover_while_alive() {
     early_holders(&mut c, &w);
     w.wait(DAY);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
 }
 
 #[test]
@@ -179,20 +213,20 @@ fn full_revival() {
     w.wait(3 * DAY + 1);
     w.at("alice.testnet", 0);
     assert_eq!(c.get_status().status, "flatlined");
-    let tk = c.start_takeover(acc("ninecat.sputnikv2.testnet"));
+    let tk = c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
     assert!(tk.total_eligible.0 > 0);
 
     for v in ["alice.testnet", "bob.testnet"] {
         w.at(v, 0);
-        c.vote(true);
+        c.t_vote(&w, true);
     }
     w.at("carol.testnet", 0);
-    c.vote(false);
+    c.t_vote(&w, false);
 
     w.wait(DAY);
     w.at("anyone.testnet", 0);
     assert_eq!(c.get_status().status, "vote_closed");
-    assert!(c.finalize_takeover());
+    assert!(c.t_finalize(&w));
 
     let s = c.get_status();
     assert_eq!(s.status, "alive");
@@ -219,10 +253,10 @@ fn creator_cannot_claim_after_revival() {
     early_holders(&mut c, &w);
     w.wait(3 * DAY + 1);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
-    c.vote(true);
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
+    c.t_vote(&w, true);
     w.wait(DAY);
-    c.finalize_takeover();
+    c.t_finalize(&w);
     w.at("dev.testnet", 0);
     c.claim_vested();
 }
@@ -242,12 +276,13 @@ fn tokens_bought_after_flatline_have_no_weight() {
     assert!(c.get_vote_weight(acc("carol.testnet")).0 > 0);
 
     w.at("carol.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         w.at("whale.testnet", 0);
-        c.vote(false);
+        c.t_vote(&w, false);
     }));
-    assert!(result.is_err(), "the whale cannot vote");
+    let msg = result.err().and_then(|e| e.downcast_ref::<String>().cloned()).unwrap_or_default();
+    assert!(msg.contains("no voting weight"), "the whale is refused for having no weight, not for another reason: {msg}");
 }
 
 #[test]
@@ -258,8 +293,8 @@ fn moving_tokens_after_voting_does_not_double_count() {
     register(&mut c, &w, "alice2.testnet");
     w.wait(3 * DAY + 1);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
-    c.vote(true);
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
+    c.t_vote(&w, true);
     send(&mut c, &w, "alice.testnet", "alice2.testnet", 300_000_000);
     assert_eq!(c.get_vote_weight(acc("alice2.testnet")).0, 0);
 
@@ -277,8 +312,8 @@ fn comeback_cancels_the_vote_and_pays_holders_treasury() {
     early_holders(&mut c, &w);
     w.wait(3 * DAY + 1);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
-    c.vote(true);
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
+    c.t_vote(&w, true);
 
     w.wait(DAY / 2);
     w.at("dev.testnet", 2 * NEAR);
@@ -308,8 +343,8 @@ fn no_comeback_after_the_vote_closes() {
     early_holders(&mut c, &w);
     w.wait(3 * DAY + 1);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
-    c.vote(true);
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
+    c.t_vote(&w, true);
     w.wait(DAY);
     w.at("dev.testnet", 2 * NEAR);
     c.pulse();
@@ -322,17 +357,17 @@ fn no_vote_wins_and_coin_stays_flatlined() {
     early_holders(&mut c, &w);
     w.wait(3 * DAY + 1);
     w.at("carol.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
-    c.vote(true);
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
+    c.t_vote(&w, true);
     w.at("alice.testnet", 0);
-    c.vote(false);
+    c.t_vote(&w, false);
     w.wait(DAY);
-    assert!(!c.finalize_takeover());
+    assert!(!c.t_finalize(&w));
     assert_eq!(c.get_status().status, "flatlined");
     assert_eq!(c.get_status().keeper, acc("dev.testnet"));
     // A new takeover can be tried.
     w.at("bob.testnet", 0);
-    assert_eq!(c.start_takeover(acc("other.sputnikv2.testnet")).id, 2);
+    assert_eq!(c.t_start(&w, acc("other.sputnikv2.testnet")).id, 2);
 }
 
 #[test]
@@ -343,10 +378,10 @@ fn quorum_is_required() {
     w.wait(3 * DAY + 1);
     // Carol alone holds 100M of 600M eligible (~16.7%), under the 20% quorum.
     w.at("carol.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
-    c.vote(true);
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
+    c.t_vote(&w, true);
     w.wait(DAY);
-    assert!(!c.finalize_takeover());
+    assert!(!c.t_finalize(&w));
     assert!(c.get_lore(None, None).iter().any(|l| l.note.contains("quorum not reached")));
 }
 
@@ -358,7 +393,7 @@ fn steward_must_be_a_dao() {
     early_holders(&mut c, &w);
     w.wait(3 * DAY + 1);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc("alice.testnet"));
+    c.t_start(&w, acc("alice.testnet"));
 }
 
 #[test]
@@ -379,12 +414,12 @@ fn nine_lives_second_death_and_revival() {
     for (round, dao) in ["first.sputnikv2.testnet", "second.sputnikv2.testnet"].iter().enumerate() {
         w.wait(3 * DAY + 1);
         w.at("alice.testnet", 0);
-        c.start_takeover(acc(dao));
-        c.vote(true);
+        c.t_start(&w, acc(dao));
+        c.t_vote(&w, true);
         w.at("bob.testnet", 0);
-        c.vote(true);
+        c.t_vote(&w, true);
         w.wait(DAY);
-        assert!(c.finalize_takeover());
+        assert!(c.t_finalize(&w));
         assert_eq!(c.get_status().lives, round as u32 + 1);
         assert_eq!(c.get_status().keeper, acc(dao));
     }
@@ -392,15 +427,43 @@ fn nine_lives_second_death_and_revival() {
 
 #[test]
 fn dex_refund_keeps_hold_time() {
+    // Goes through the real NEP-141 path: ft_transfer_call to a pool that returns
+    // everything, then ft_resolve_transfer hands it back.
     let mut w = World::new();
     let mut c = launch(&w);
     early_holders(&mut c, &w);
     register(&mut c, &w, "pool.testnet");
     w.wait(2 * DAY);
     let since_before = c.holders.get(&acc("alice.testnet")).unwrap().since;
-    w.at("alice.testnet", 1);
-    c.internal_transfer(&acc("alice.testnet"), &acc("pool.testnet"), 1_000 * TOKEN, false);
-    c.internal_transfer(&acc("pool.testnet"), &acc("alice.testnet"), 1_000 * TOKEN, true);
+    let bal_before = c.ft_balance_of(acc("alice.testnet")).0;
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acc("revive.testnet"))
+        .predecessor_account_id(acc("alice.testnet"))
+        .block_timestamp(w.t * 1_000_000_000)
+        .attached_deposit(NearToken::from_yoctonear(1))
+        .prepaid_gas(near_sdk::Gas::from_tgas(100));
+    testing_env!(b.build());
+    let _ = c.ft_transfer_call(acc("pool.testnet"), U128(1_000 * TOKEN), None, "swap".into());
+    assert_eq!(c.ft_balance_of(acc("alice.testnet")).0, bal_before - 1_000 * TOKEN);
+    // The pool says it used nothing (and even claims more back than it got: clamped).
+    w.at("revive.testnet", 0);
+    let used = c.ft_resolve_transfer(acc("alice.testnet"), acc("pool.testnet"), U128(1_000 * TOKEN), Ok(U128(5_000 * TOKEN)));
+    assert_eq!(used.0, 0);
+    assert_eq!(c.ft_balance_of(acc("alice.testnet")).0, bal_before, "the refund is whole");
+    assert_eq!(c.holders.get(&acc("alice.testnet")).unwrap().since, since_before, "and keeps the old hold time");
+    // A failed receiver call refunds everything too.
+    let mut b = VMContextBuilder::new();
+    b.current_account_id(acc("revive.testnet"))
+        .predecessor_account_id(acc("alice.testnet"))
+        .block_timestamp(w.t * 1_000_000_000)
+        .attached_deposit(NearToken::from_yoctonear(1))
+        .prepaid_gas(near_sdk::Gas::from_tgas(100));
+    testing_env!(b.build());
+    let _ = c.ft_transfer_call(acc("pool.testnet"), U128(10 * TOKEN), None, "swap".into());
+    w.at("revive.testnet", 0);
+    let used = c.ft_resolve_transfer(acc("alice.testnet"), acc("pool.testnet"), U128(10 * TOKEN), Err(near_sdk::PromiseError::Failed));
+    assert_eq!(used.0, 0);
+    assert_eq!(c.ft_balance_of(acc("alice.testnet")).0, bal_before);
     assert_eq!(c.holders.get(&acc("alice.testnet")).unwrap().since, since_before);
 }
 
@@ -436,7 +499,7 @@ fn factory_names_the_creator() {
         name: "Nine".into(), symbol: "NINE".into(), icon: None, links: None,
         total_supply: U128(1_000 * TOKEN), dev_allocation: U128(100 * TOKEN),
         distributor: acc("nine.revive-factory.testnet"),
-        pulse_interval_secs: DAY, vote_duration_secs: DAY, quorum_bps: 2_000, vest_duration_secs: 0,
+        pulse_interval_secs: DAY, vote_duration_secs: DAY, quorum_bps: 2_000, vest_duration_secs: 4 * DAY,
         spend_cap: U128(NEAR), spend_period_secs: DAY, comeback_penalty: U128(NEAR),
         dao_suffix: ".sputnikv2.testnet".into(), creator: Some(acc("mia.testnet")),
     });
@@ -455,7 +518,7 @@ fn strangers_cannot_name_the_creator() {
         name: "Fake".into(), symbol: "FAKE".into(), icon: None, links: None,
         total_supply: U128(1_000 * TOKEN), dev_allocation: U128(0),
         distributor: acc("mallory.testnet"),
-        pulse_interval_secs: DAY, vote_duration_secs: DAY, quorum_bps: 2_000, vest_duration_secs: 0,
+        pulse_interval_secs: DAY, vote_duration_secs: DAY, quorum_bps: 2_000, vest_duration_secs: 4 * DAY,
         spend_cap: U128(NEAR), spend_period_secs: DAY, comeback_penalty: U128(NEAR),
         dao_suffix: ".sputnikv2.testnet".into(), creator: Some(acc("vitalik.testnet")),
     });
@@ -464,6 +527,7 @@ fn strangers_cannot_name_the_creator() {
 
 // Grouped test files, each proving one kind of claim (see the table in the README).
 mod attacks;
+mod launch_rules;
 mod invariants;
 mod money;
 mod timing;
@@ -490,5 +554,5 @@ fn panics<F: FnOnce()>(f: F) -> Option<String> {
 fn dead_and_open(c: &mut Revive, w: &mut World) {
     w.wait(3 * DAY + 1);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
+    c.t_start(w, acc("ninecat.sputnikv2.testnet"));
 }

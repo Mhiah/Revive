@@ -32,11 +32,11 @@ fn quorum_cannot_be_dodged_by_late_buying() {
     w.wait(10 * DAY);
     send(&mut c, &w, "dev.testnet", "whale.testnet", 290_000_000);
     w.at("carol.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
-    c.vote(true);
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
+    c.t_vote(&w, true);
     w.wait(DAY);
     w.at("carol.testnet", 0);
-    assert!(!c.finalize_takeover(), "a 17% yes must not pass a 20% quorum");
+    assert!(!c.t_finalize(&w), "a 17% yes must not pass a 20% quorum");
     assert!(c.get_lore(None, None).last().unwrap().note.contains("quorum not reached"));
 }
 
@@ -111,8 +111,8 @@ fn nobody_votes_twice() {
     let mut c = launch(&w);
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
-    c.vote(true);
-    c.vote(true);
+    c.t_vote(&w, true);
+    c.t_vote(&w, true);
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn the_creator_cannot_vote_on_their_own_takeover() {
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
     w.at("dev.testnet", 0);
-    c.vote(false);
+    c.t_vote(&w, false);
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn the_creator_cannot_start_a_takeover() {
     early_holders(&mut c, &w);
     w.wait(3 * DAY + 1);
     w.at("dev.testnet", 0);
-    c.start_takeover(acc("friendly.sputnikv2.testnet"));
+    c.t_start(&w, acc("friendly.sputnikv2.testnet"));
 }
 
 #[test]
@@ -147,7 +147,7 @@ fn a_late_buyer_cannot_start_a_takeover() {
     w.wait(3 * DAY + 1);
     send(&mut c, &w, "dev.testnet", "whale.testnet", 100_000_000);
     w.at("whale.testnet", 0);
-    c.start_takeover(acc("whales.sputnikv2.testnet"));
+    c.t_start(&w, acc("whales.sputnikv2.testnet"));
 }
 
 #[test]
@@ -158,7 +158,7 @@ fn only_one_takeover_at_a_time() {
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
     w.at("bob.testnet", 0);
-    c.start_takeover(acc("other.sputnikv2.testnet"));
+    c.t_start(&w, acc("other.sputnikv2.testnet"));
 }
 
 fn nominate(steward: &str) {
@@ -167,7 +167,7 @@ fn nominate(steward: &str) {
     early_holders(&mut c, &w);
     w.wait(3 * DAY + 1);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc(steward));
+    c.t_start(&w, acc(steward));
 }
 
 #[test]
@@ -199,8 +199,15 @@ fn the_creator_cannot_move_locked_tokens() {
     let w = World::new();
     let mut c = launch(&w);
     register(&mut c, &w, "alice.testnet");
-    // The dev holds 900M liquid; the 100M locked share is not theirs to send.
-    send(&mut c, &w, "dev.testnet", "alice.testnet", 900_000_001);
+    // The locked 100M sit with the coin, not in the creator's balance.
+    assert_eq!(c.ft_balance_of(acc("dev.testnet")).0, 900_000_000 * TOKEN);
+    assert_eq!(c.get_status().dev_locked.0, 100_000_000 * TOKEN);
+    // The creator sends everything they hold; the locked share is still locked...
+    send(&mut c, &w, "dev.testnet", "alice.testnet", 900_000_000);
+    assert_eq!(c.ft_balance_of(acc("dev.testnet")).0, 0);
+    assert_eq!(c.get_status().dev_locked.0, 100_000_000 * TOKEN);
+    // ...and not one more token can leave.
+    send(&mut c, &w, "dev.testnet", "alice.testnet", 1);
 }
 
 #[test]
@@ -234,16 +241,16 @@ fn a_late_whale_cannot_flip_a_passing_vote() {
     early_holders(&mut c, &w);
     register(&mut c, &w, "whale.testnet");
     dead_and_open(&mut c, &mut w);
-    c.vote(true);
+    c.t_vote(&w, true);
     send(&mut c, &w, "dev.testnet", "whale.testnet", 290_000_000);
     assert!(panics(|| {
         w.at("whale.testnet", 0);
-        c.vote(false);
+        c.t_vote(&w, false);
     })
     .unwrap()
     .contains("no voting weight"));
     w.wait(DAY);
     w.at("bob.testnet", 0);
-    assert!(c.finalize_takeover());
+    assert!(c.t_finalize(&w));
 }
 

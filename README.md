@@ -149,7 +149,7 @@ every other day until they don't. Parameters: 1B supply, 10% creator allocation 
 | Whale buys 300M after the death | alive (whale's vote refused) | 1 | 907.2M | 92.8M | 12.5 NEAR |
 | Dev comes back mid-vote | alive | 0 | 1,000M | 0 | 18.5 NEAR (+2 penalty) |
 | The steward DAO dies too | alive | 2 | 907.2M | 92.8M | 13.0 NEAR |
-| Holders vote no | flatlined | 0 | 1,000M | 0 | 16.5 NEAR |
+| Holders vote no | flatlined | 0 | 1,000M | 0 | 16.6 NEAR (includes the failed takeover's 0.1 NEAR bond) |
 
 What it shows: supply only ever falls, and only by the creator's *unvested* tokens on the first revival
 (the 7.2M the dev vested while alive stay theirs). A whale arriving after the death changes nothing. A comeback is

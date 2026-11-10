@@ -25,7 +25,22 @@ mod tests;
 
 const WEIGHT_SCALE: u128 = 1_000_000_000_000;
 /// Supply cap used to keep weight math in u128: 1e30 base units.
-const MAX_STAKE: u128 = 1_000_000_000_000_000_000_000_000_000_000;
+/// Weight maths runs in "weight units" of 10^(decimals - 12) base units, so a
+/// 24-decimal token with a trillion supply still fits in u128 (see `w`). The sum
+/// of everyone's weight units is capped here: 1e28 * a timestamp stays below 2^128.
+const MAX_WEIGHT_UNITS: u128 = 10_000_000_000_000_000_000_000_000_000;
+pub const MAX_PERIOD_SECS: u64 = 30 * 86_400;
+pub const MIN_VEST_PULSES: u64 = 4;
+pub const MIN_PENALTY: u128 = 10_000_000_000_000_000_000_000; // 0.01 NEAR
+pub const TAKEOVER_BOND: u128 = 100_000_000_000_000_000_000_000; // 0.1 NEAR
+/// Bytes each call pays for (generous; anything unused stays as storage headroom).
+/// Writes only land after a call returns, so these are fixed rather than measured.
+pub const VOTE_BYTES: u128 = 250;
+pub const TAKEOVER_BYTES: u128 = 900;
+pub const FINALIZE_BYTES: u128 = 400;
+pub const LINKS_BASE_BYTES: u128 = 300;
+/// What a staker pays once (storage_deposit) for their entry in the guard.
+pub const STAKER_STORAGE: u128 = 2_000_000_000_000_000_000_000; // 0.002 NEAR
 const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
 const GAS_CALLBACK: Gas = Gas::from_tgas(10);
 
@@ -45,6 +60,18 @@ enum StorageKey {
     Stakers,
     Ballots,
     Lore,
+}
+
+#[near(serializers = [json])]
+pub struct StorageBalance {
+    pub total: U128,
+    pub available: U128,
+}
+
+#[near(serializers = [json])]
+pub struct StorageBalanceBounds {
+    pub min: U128,
+    pub max: Option<U128>,
 }
 
 #[near(serializers = [borsh])]
@@ -105,6 +132,7 @@ pub struct Takeover {
     pub no: U128,
     pub total_eligible: U128,
     pub voters: u32,
+    pub bond: U128,
 }
 
 #[near(serializers = [borsh, json])]
@@ -164,10 +192,18 @@ pub struct Guard {
     bag_claimed: u128,
     bag_sealed: u128,
     vest_start: u64,
+    /// Bag tokens already vested when the vesting schedule last restarted (a later lock
+    /// restarts it, so newly locked tokens vest from the moment they arrive).
+    vest_carry: u128,
     dev_active: bool,
+    /// One weight unit in base units: 10^(decimals - 12), at least 1.
+    unit: u128,
+    /// Sum of every staker's weight units (see `w`).
+    w_total: u128,
     stakers: LookupMap<AccountId, Stake>,
     staker_count: u32,
     staked_total: u128,
+    /// Sum over stakers of w(balance) * since.
     sum_bal_since: u128,
     /// Stake that arrived after the flatline, as stake * (since - flatline). Added back so the
     /// eligible total is exact; resets to 0 on every new heartbeat (see the coin contract).
@@ -191,11 +227,18 @@ impl Guard {
     #[init]
     #[payable]
     pub fn new(config: ConnectConfig) -> Self {
-        require!(config.pulse_interval_secs >= 60, "pulse interval must be at least 60s");
-        require!(config.vote_duration_secs >= 60, "vote must last at least 60s");
+        require!(config.pulse_interval_secs >= 60 && config.pulse_interval_secs <= MAX_PERIOD_SECS, "pulse interval must be 60s to 30 days");
+        require!(config.vote_duration_secs >= 60 && config.vote_duration_secs <= MAX_PERIOD_SECS, "vote must last 60s to 30 days");
         require!(config.quorum_bps >= 1 && config.quorum_bps <= 10_000, "quorum must be 1..=10000 bps");
         require!(config.spend_period_secs >= 60, "spend period must be at least 60s");
+        require!(
+            config.vest_duration_secs >= MIN_VEST_PULSES * config.pulse_interval_secs,
+            "creator tokens must vest over at least 4 heartbeats"
+        );
+        require!(config.comeback_penalty.0 >= MIN_PENALTY, "comeback penalty must be at least 0.01 NEAR");
         require!(config.dao_suffix.starts_with('.') && config.dao_suffix.len() > 1, "dao_suffix must start with '.'");
+        require!(config.decimals <= 32, "decimals must be at most 32");
+        require!(config.links.as_ref().is_none_or(|l| l.len() <= 1_000), "links too long");
         let caller = env::predecessor_account_id();
         let creator = match config.creator {
             Some(c) => {
@@ -206,11 +249,15 @@ impl Guard {
         };
         require!(config.token_id != env::current_account_id(), "a guard cannot guard itself");
         let t = now();
+        let unit = 10u128.pow(config.decimals.saturating_sub(12) as u32);
+        // Names and symbols come from the token's own metadata: keep them a sane size.
+        let name: String = config.name.chars().take(64).collect();
+        let symbol: String = config.symbol.chars().take(16).collect();
         let mut this = Self {
             cfg: Config {
                 token_id: config.token_id,
-                name: config.name,
-                symbol: config.symbol,
+                name,
+                symbol,
                 decimals: config.decimals,
                 pulse_interval_secs: config.pulse_interval_secs,
                 vote_duration_secs: config.vote_duration_secs,
@@ -230,7 +277,10 @@ impl Guard {
             bag_claimed: 0,
             bag_sealed: 0,
             vest_start: 0,
+            vest_carry: 0,
             dev_active: true,
+            unit,
+            w_total: 0,
             stakers: LookupMap::new(StorageKey::Stakers),
             staker_count: 0,
             staked_total: 0,
@@ -262,23 +312,54 @@ impl Guard {
             "lock" => {
                 require!(sender_id == self.creator && self.dev_active && self.keeper == self.creator, "only the living creator locks a bag");
                 self.assert_alive();
-                require!(self.bag_total + amount.0 <= MAX_STAKE, "amount too large");
-                if self.vest_start == 0 {
-                    self.vest_start = now();
-                }
+                require!(self.bag_total.checked_add(amount.0).is_some(), "amount too large");
+                // What has vested so far stays vested; everything still locked, old and new,
+                // vests over a fresh full period from now. A top-up can't unlock early.
+                self.vest_carry = self.vested();
+                self.vest_start = now();
                 self.bag_total += amount.0;
                 self.push_lore("lock", &sender_id, format!("creator locked {} base units", amount.0));
                 emit("lock", json!({ "creator": sender_id, "amount": amount }));
             }
             "stake" => {
                 require!(sender_id != self.creator && sender_id != self.keeper, "the creator and keeper cannot stake for votes");
-                require!(self.staked_total + amount.0 <= MAX_STAKE, "amount too large");
+                require!(self.stakers.contains_key(&sender_id), "register first: call storage_deposit on the guard");
+                require!(self.staked_total.checked_add(amount.0).is_some(), "amount too large");
                 self.credit(&sender_id, amount.0, now());
+                require!(self.w_total <= MAX_WEIGHT_UNITS, "amount too large");
                 emit("stake", json!({ "account_id": sender_id, "amount": amount }));
             }
             _ => env::panic_str("msg must be \"lock\" or \"stake\""),
         }
         PromiseOrValue::Value(U128(0))
+    }
+
+    /// Register to stake (NEP-145 style): pays once for your entry in the guard.
+    #[payable]
+    pub fn storage_deposit(&mut self, account_id: Option<AccountId>, registration_only: Option<bool>) -> StorageBalance {
+        let _ = registration_only;
+        let account = account_id.unwrap_or_else(env::predecessor_account_id);
+        let deposit = env::attached_deposit().as_yoctonear();
+        let refund = if self.stakers.contains_key(&account) {
+            deposit
+        } else {
+            require!(deposit >= STAKER_STORAGE, "attach at least 0.002 NEAR to register");
+            self.stakers.insert(account.clone(), Stake { balance: 0, since: now() });
+            self.staker_count += 1;
+            deposit - STAKER_STORAGE
+        };
+        if refund > 0 {
+            let _ = Promise::new(env::predecessor_account_id()).transfer(NearToken::from_yoctonear(refund));
+        }
+        StorageBalance { total: U128(STAKER_STORAGE), available: U128(0) }
+    }
+
+    pub fn storage_balance_of(&self, account_id: AccountId) -> Option<StorageBalance> {
+        self.stakers.contains_key(&account_id).then_some(StorageBalance { total: U128(STAKER_STORAGE), available: U128(0) })
+    }
+
+    pub fn storage_balance_bounds(&self) -> StorageBalanceBounds {
+        StorageBalanceBounds { min: U128(STAKER_STORAGE), max: Some(U128(STAKER_STORAGE)) }
     }
 
     /// Take staked tokens back. Allowed at any time; tokens staked later carry less weight.
@@ -321,6 +402,9 @@ impl Guard {
                 Some(tk) => format!("came back {}s late and paid {} yocto; takeover #{} cancelled", t - self.flatline_at(), deposit, tk.id),
                 None => format!("came back {}s late and paid {} yocto", t - self.flatline_at(), deposit),
             };
+            if let Some(tk) = &cancelled {
+                let _ = Promise::new(tk.proposer.clone()).transfer(NearToken::from_yoctonear(tk.bond.0));
+            }
             let keeper = self.keeper.clone();
             self.push_lore("comeback", &keeper, note);
             emit("comeback", json!({ "keeper": keeper, "penalty": deposit.to_string() }));
@@ -379,22 +463,26 @@ impl Guard {
         self.spent_in_period += amount.0;
         let keeper = self.keeper.clone();
         self.push_lore("spend", &keeper, format!("{} yocto to {}: {}", amount.0, receiver_id, memo));
+        self.assert_storage_covered(amount.0);
         Promise::new(receiver_id).transfer(NearToken::from_yoctonear(amount.0))
     }
 
+    #[payable]
     pub fn set_links(&mut self, links: Option<String>) {
         require!(env::predecessor_account_id() == self.keeper, "only the keeper can change the links");
         self.assert_alive();
         if let Some(l) = &links {
             require!(l.len() <= 1_000, "links too long");
         }
-        self.links = links;
+                self.links = links;
+        self.charge_storage(LINKS_BASE_BYTES + self.links.as_ref().map_or(0, |l| l.len() as u128), 0);
     }
 
     // -------------------------------------------------------------- takeover
 
+    #[payable]
     pub fn start_takeover(&mut self, steward: AccountId) -> Takeover {
-        let t = now();
+                let t = now();
         let caller = env::predecessor_account_id();
         require!(self.takeover.is_none(), "a takeover vote is already open");
         require!(t > self.flatline_at(), "the coin still has a pulse");
@@ -414,17 +502,20 @@ impl Guard {
             no: U128(0),
             total_eligible: U128(self.eligible_total(f)),
             voters: 0,
+            bond: U128(TAKEOVER_BOND),
         };
         self.takeover = Some(tk.clone());
         let keeper = self.keeper.clone();
         self.push_lore("flatline", &keeper, format!("no pulse since {}; flatlined at {}", self.last_pulse, f));
         self.push_lore("takeover", &caller, format!("takeover #{} opened: {} nominated as keeper", tk.id, steward));
         emit("takeover_started", json!({ "id": tk.id, "steward": steward, "proposer": caller, "ends_at": tk.ends_at }));
+        self.charge_storage(TAKEOVER_BYTES, TAKEOVER_BOND);
         tk
     }
 
+    #[payable]
     pub fn vote(&mut self, support: bool) -> Ballot {
-        let caller = env::predecessor_account_id();
+                let caller = env::predecessor_account_id();
         let mut tk = self.takeover.clone().expect("no takeover vote is open");
         require!(now() < tk.ends_at, "the vote has closed");
         let key = (tk.id, caller.clone());
@@ -441,11 +532,13 @@ impl Guard {
         self.ballots.insert(key, ballot.clone());
         emit("vote", json!({ "id": tk.id, "voter": caller, "support": support, "weight": weight.to_string() }));
         self.takeover = Some(tk);
+        self.charge_storage(VOTE_BYTES, 0);
         ballot
     }
 
+    #[payable]
     pub fn finalize_takeover(&mut self) -> bool {
-        let tk = self.takeover.clone().expect("no takeover vote is open");
+                let tk = self.takeover.clone().expect("no takeover vote is open");
         let t = now();
         require!(t >= tk.ends_at, "the vote is still open");
         self.takeover = None;
@@ -456,8 +549,11 @@ impl Guard {
             let why = if tk.yes.0 <= tk.no.0 { "holders voted no" } else { "quorum not reached" };
             self.push_lore("takeover_failed", &caller, format!("takeover #{} failed: {}", tk.id, why));
             emit("takeover_failed", json!({ "id": tk.id, "reason": why }));
+            self.treasury += tk.bond.0;
+            self.charge_storage(FINALIZE_BYTES, 0);
             return false;
         }
+        let _ = Promise::new(tk.proposer.clone()).transfer(NearToken::from_yoctonear(tk.bond.0));
         let old_keeper = self.keeper.clone();
         self.keeper = tk.steward.clone();
         let mut sealed = 0;
@@ -477,6 +573,7 @@ impl Guard {
             format!("life #{}: keeper {} replaced by {}; {} creator base units sealed forever", self.lives, old_keeper, tk.steward, sealed),
         );
         emit("revived", json!({ "id": tk.id, "old_keeper": old_keeper, "new_keeper": tk.steward, "lives": self.lives, "sealed": sealed.to_string() }));
+        self.charge_storage(FINALIZE_BYTES, 0);
         true
     }
 
@@ -558,11 +655,13 @@ impl Guard {
         if self.vest_start == 0 {
             return 0;
         }
-        if self.cfg.vest_duration_secs == 0 {
-            return self.bag_total;
-        }
         let elapsed = (now() - self.vest_start).min(self.cfg.vest_duration_secs) as u128;
-        self.bag_total * elapsed / self.cfg.vest_duration_secs as u128
+        self.vest_carry + (self.bag_total - self.vest_carry) * elapsed / self.cfg.vest_duration_secs as u128
+    }
+
+    /// Weight units for a balance (see `unit`).
+    pub(crate) fn w(&self, balance: u128) -> u128 {
+        balance / self.unit
     }
 
     pub(crate) fn weight_at(&self, account: &AccountId, f: u64) -> u128 {
@@ -570,35 +669,42 @@ impl Guard {
             return 0;
         }
         match self.stakers.get(account) {
-            Some(s) if s.since < f => s.balance * (f - s.since) as u128 / WEIGHT_SCALE,
+            Some(s) if s.since < f => self.w(s.balance) * (f - s.since) as u128 / WEIGHT_SCALE,
             _ => 0,
         }
     }
 
     pub(crate) fn eligible_total(&self, f: u64) -> u128 {
-        let all = (self.staked_total * f as u128 + self.late_excess).saturating_sub(self.sum_bal_since) / WEIGHT_SCALE;
+        let all = (self.w_total * f as u128 + self.late_excess).saturating_sub(self.sum_bal_since) / WEIGHT_SCALE;
         // A DAO that staked before it was elected can't vote once it is keeper, so its stake
         // is left out (the creator can never stake, so only the keeper needs this).
         let keeper_part = match self.stakers.get(&self.keeper) {
-            Some(s) if s.since < f => s.balance * (f - s.since) as u128 / WEIGHT_SCALE,
+            Some(s) if s.since < f => self.w(s.balance) * (f - s.since) as u128 / WEIGHT_SCALE,
             _ => 0,
         };
         all.saturating_sub(keeper_part)
     }
 
+    /// Adds `amount` that arrived at `stamp` to the account's stake. All weight sums are in
+    /// weight units, and each holding's old contribution is taken out and its new one put
+    /// back, so the running sums always equal the per-staker totals exactly.
     pub(crate) fn credit(&mut self, account: &AccountId, amount: u128, stamp: u64) {
-        let mut s = match self.stakers.get(account) {
-            Some(s) => s.clone(),
-            None => {
-                self.staker_count += 1;
-                Stake { balance: 0, since: stamp }
-            }
+        let mut s = self.stakers.get(account).cloned().unwrap_or_else(|| env::panic_str("register first: call storage_deposit on the guard"));
+        let (ow, nb) = (self.w(s.balance), s.balance + amount);
+        let nw = self.w(nb);
+        // Balance-weighted average arrival time, in weight units. Rounded towards the
+        // later time when it moves forward and towards less change when it moves back,
+        // so rounding can only ever lower a weight.
+        let ns = if nw == 0 || ow == 0 {
+            if ow == 0 { stamp.max(s.since) } else { s.since }
+        } else if stamp >= s.since {
+            s.since + ((nw - ow) * (stamp - s.since) as u128).div_ceil(nw) as u64
+        } else {
+            s.since - ((nw - ow) * (s.since - stamp) as u128 / nw) as u64
         };
-        let old = s.balance * s.since as u128;
-        let nb = s.balance + amount;
-        let ns = (old + amount * stamp as u128).div_ceil(nb) as u64;
-        self.sum_bal_since = self.sum_bal_since - old + nb * ns as u128;
-        self.late_excess = self.late_excess - self.late_part(s.balance, s.since) + self.late_part(nb, ns);
+        self.sum_bal_since = self.sum_bal_since - ow * s.since as u128 + nw * ns as u128;
+        self.late_excess = self.late_excess - self.late_part(ow, s.since) + self.late_part(nw, ns);
+        self.w_total = self.w_total - ow + nw;
         s.balance = nb;
         s.since = ns;
         self.staked_total += amount;
@@ -608,16 +714,42 @@ impl Guard {
     pub(crate) fn debit(&mut self, account: &AccountId, amount: u128) {
         let mut s = self.stakers.get(account).cloned().unwrap_or_else(|| env::panic_str("nothing staked"));
         require!(amount > 0 && s.balance >= amount, "not enough staked");
-        self.sum_bal_since -= amount * s.since as u128;
-        self.late_excess -= self.late_part(amount, s.since);
+        let (ow, nw) = (self.w(s.balance), self.w(s.balance - amount));
+        self.sum_bal_since = self.sum_bal_since - ow * s.since as u128 + nw * s.since as u128;
+        self.late_excess = self.late_excess - self.late_part(ow, s.since) + self.late_part(nw, s.since);
+        self.w_total = self.w_total - ow + nw;
         s.balance -= amount;
         self.staked_total -= amount;
         self.stakers.insert(account.clone(), s);
     }
 
-    pub(crate) fn late_part(&self, balance: u128, since: u64) -> u128 {
+    /// `w` weight units held since `since`, past the flatline, in unit-seconds (0 if before it).
+    pub(crate) fn late_part(&self, w: u128, since: u64) -> u128 {
         let f = self.flatline_at();
-        if since > f { balance * (since - f) as u128 } else { 0 }
+        if since > f { w * (since - f) as u128 } else { 0 }
+    }
+
+    /// The caller pays for `bytes` of storage plus `extra` (a bond) out of the attached
+    /// deposit; whatever is left goes back to them.
+    pub(crate) fn charge_storage(&self, bytes: u128, extra: u128) {
+        let cost = bytes * env::storage_byte_cost().as_yoctonear();
+        let deposit = env::attached_deposit().as_yoctonear();
+        require!(
+            deposit >= cost + extra,
+            format!("attach at least {} yoctoNEAR ({} for storage, {} bond)", cost + extra, cost, extra)
+        );
+        let refund = deposit - cost - extra;
+        if refund > 0 {
+            let _ = Promise::new(env::predecessor_account_id()).transfer(NearToken::from_yoctonear(refund));
+        }
+    }
+
+    pub(crate) fn assert_storage_covered(&self, amount: u128) {
+        let locked = env::storage_usage() as u128 * env::storage_byte_cost().as_yoctonear();
+        require!(
+            env::account_balance().as_yoctonear() >= amount + locked,
+            "the treasury NEAR is needed to pay for the guard's storage"
+        );
     }
 
     fn push_lore(&mut self, kind: &str, actor: &AccountId, note: String) {

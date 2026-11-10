@@ -19,7 +19,7 @@ fn a_vote_at_the_closing_second_is_refused() {
     dead_and_open(&mut g, &mut w);
     w.t += DAY;
     w.at("bob.testnet", 0);
-    g.vote(true);
+    g.t_vote(&w, true);
 }
 
 #[test]
@@ -28,10 +28,10 @@ fn finalizing_early_is_refused() {
     let mut w = W { t: START };
     let mut g = setup(&w);
     dead_and_open(&mut g, &mut w);
-    g.vote(true);
+    g.t_vote(&w, true);
     w.t += DAY - 1;
     w.at("bob.testnet", 0);
-    g.finalize_takeover();
+    g.t_finalize(&w);
 }
 
 #[test]
@@ -42,13 +42,13 @@ fn a_tie_is_a_no() {
     deliver(&mut g, &w, "q.testnet", 100, "stake");
     w.t += 3 * DAY + 1;
     w.at("p.testnet", 0);
-    g.start_takeover(acc("x.sputnikv2.testnet"));
-    g.vote(true);
+    g.t_start(&w, acc("x.sputnikv2.testnet"));
+    g.t_vote(&w, true);
     w.at("q.testnet", 0);
-    g.vote(false);
+    g.t_vote(&w, false);
     w.t += DAY;
     w.at("q.testnet", 0);
-    assert!(!g.finalize_takeover());
+    assert!(!g.t_finalize(&w));
 }
 
 #[test]
@@ -99,12 +99,12 @@ fn the_sealed_bag_is_exactly_what_was_not_claimed() {
     let _ = g.claim_vested(); // 40 of 100 days
     assert_eq!(g.get_status().dev_claimed.0, 40_000_000 * T);
     dead_and_open(&mut g, &mut w);
-    g.vote(true);
+    g.t_vote(&w, true);
     w.at("bob.testnet", 0);
-    g.vote(true);
+    g.t_vote(&w, true);
     w.t += DAY;
     w.at("bob.testnet", 0);
-    assert!(g.finalize_takeover());
+    assert!(g.t_finalize(&w));
     let s = g.get_status();
     assert_eq!(s.dev_burned.0, 60_000_000 * T, "the unclaimed 60M is sealed");
     assert_eq!(s.dev_locked.0, 0);

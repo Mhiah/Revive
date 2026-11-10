@@ -15,8 +15,18 @@ struct W {
     t: u64,
 }
 
+thread_local! {
+    static WHO: std::cell::RefCell<String> = std::cell::RefCell::new("dev.testnet".into());
+}
+
 impl W {
+    /// Same caller and time, a different attached deposit.
+    fn pay(&self, deposit: u128) {
+        let who = WHO.with(|w| w.borrow().clone());
+        self.at(&who, deposit);
+    }
     fn at(&self, who: &str, deposit: u128) {
+        WHO.with(|w| *w.borrow_mut() = who.to_string());
         let mut b = VMContextBuilder::new();
         b.current_account_id(acc("meme-guard.revive.testnet"))
             .predecessor_account_id(acc(who))
@@ -52,8 +62,47 @@ fn connect(w: &W) -> Guard {
     })
 }
 
-/// The token contract calls ft_on_transfer on behalf of `sender`.
+/// The takeover calls with the NEAR they need attached (bond, storage), as the app sends them.
+pub(crate) const POCKET: u128 = NEAR / 100;
+trait TakeoverCalls {
+    fn t_start(&mut self, w: &W, steward: AccountId) -> Takeover;
+    fn t_vote(&mut self, w: &W, support: bool) -> Ballot;
+    fn t_finalize(&mut self, w: &W) -> bool;
+}
+impl TakeoverCalls for Guard {
+    fn t_start(&mut self, w: &W, steward: AccountId) -> Takeover {
+        w.pay(TAKEOVER_BOND + POCKET);
+        let r = self.start_takeover(steward);
+        w.pay(0);
+        r
+    }
+    fn t_vote(&mut self, w: &W, support: bool) -> Ballot {
+        w.pay(POCKET);
+        let r = self.vote(support);
+        w.pay(0);
+        r
+    }
+    fn t_finalize(&mut self, w: &W) -> bool {
+        w.pay(POCKET);
+        let r = self.finalize_takeover();
+        w.pay(0);
+        r
+    }
+}
+
+/// A staker registers once (storage_deposit), as the app does before their first stake.
+fn register(g: &mut Guard, w: &W, who: &str) {
+    if g.storage_balance_of(acc(who)).is_none() {
+        w.at(who, STAKER_STORAGE);
+        let _ = g.storage_deposit(None, None);
+    }
+}
+
+/// The token contract calls ft_on_transfer on behalf of `sender` (registering stakers first).
 fn deliver(g: &mut Guard, w: &W, sender: &str, tokens: u128, msg: &str) {
+    if msg == "stake" && sender != "dev.testnet" {
+        register(g, w, sender);
+    }
     w.at("meme.cooking.testnet", 0);
     let _ = g.ft_on_transfer(acc(sender), U128(tokens * T), msg.into());
 }
@@ -127,15 +176,15 @@ fn full_takeover_seals_the_bag() {
     assert_eq!(g.get_status().status, "flatlined");
 
     w.at("alice.testnet", 0);
-    g.start_takeover(acc("meme.sputnikv2.testnet"));
-    g.vote(true);
+    g.t_start(&w, acc("meme.sputnikv2.testnet"));
+    g.t_vote(&w, true);
     w.at("bob.testnet", 0);
-    g.vote(true);
+    g.t_vote(&w, true);
     w.at("carol.testnet", 0);
-    g.vote(false);
+    g.t_vote(&w, false);
     w.t += DAY;
     w.at("anyone.testnet", 0);
-    assert!(g.finalize_takeover());
+    assert!(g.t_finalize(&w));
     let s = g.get_status();
     assert_eq!(s.keeper, acc("meme.sputnikv2.testnet"));
     assert_eq!(s.lives, 1);
@@ -155,12 +204,23 @@ fn staking_after_the_death_buys_no_vote() {
     w.t += 3 * DAY + 1;
     deliver(&mut g, &w, "whale.testnet", 900_000_000, "stake");
     assert_eq!(g.get_vote_weight(acc("whale.testnet")).0, 0);
+    // The whale can't open a takeover on the same, dead guard (checked by its message,
+    // so the test can't pass for some other reason such as "the coin still has a pulse").
     w.at("whale.testnet", 0);
-    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut g2 = std::mem::replace(&mut g, setup(&W { t: START }));
-        g2.start_takeover(acc("x.sputnikv2.testnet"));
-    }));
-    assert!(r.is_err(), "whale cannot open a takeover");
+    let err = panics(|| {
+        g.t_start(&w, acc("x.sputnikv2.testnet"));
+    })
+    .expect("the whale is refused");
+    assert!(err.contains("only holders who staked before the flatline"), "{err}");
+    // Nor vote on one an early holder opens.
+    w.at("alice.testnet", 0);
+    g.t_start(&w, acc("x.sputnikv2.testnet"));
+    w.at("whale.testnet", 0);
+    let err = panics(|| {
+        g.t_vote(&w, false);
+    })
+    .expect("the whale's vote is refused");
+    assert!(err.contains("no voting weight"), "{err}");
 }
 
 #[test]
@@ -197,7 +257,7 @@ fn comeback_mid_vote() {
     let mut g = setup(&w);
     w.t += 3 * DAY + 1;
     w.at("alice.testnet", 0);
-    g.start_takeover(acc("meme.sputnikv2.testnet"));
+    g.t_start(&w, acc("meme.sputnikv2.testnet"));
     w.at("dev.testnet", 2 * NEAR);
     g.pulse();
     let s = g.get_status();
@@ -226,11 +286,11 @@ fn quorum_and_no_votes() {
     let mut g = setup(&w);
     w.t += 3 * DAY + 1;
     w.at("carol.testnet", 0);
-    g.start_takeover(acc("meme.sputnikv2.testnet"));
-    g.vote(true);
+    g.t_start(&w, acc("meme.sputnikv2.testnet"));
+    g.t_vote(&w, true);
     w.t += DAY;
     w.at("anyone.testnet", 0);
-    assert!(!g.finalize_takeover(), "carol alone is under the 20% quorum");
+    assert!(!g.t_finalize(&w), "carol alone is under the 20% quorum");
     assert_eq!(g.get_status().status, "flatlined");
 }
 
@@ -262,7 +322,7 @@ fn strangers_cannot_name_creator() {
         pulse_interval_secs: DAY,
         vote_duration_secs: DAY,
         quorum_bps: 2_000,
-        vest_duration_secs: 0,
+        vest_duration_secs: 4 * DAY,
         spend_cap: U128(NEAR),
         spend_period_secs: DAY,
         comeback_penalty: U128(NEAR),
@@ -274,6 +334,7 @@ fn strangers_cannot_name_creator() {
 
 // Grouped test files (see the table in the README).
 mod attacks;
+mod fixes;
 mod money_and_time;
 mod invariants;
 
@@ -291,5 +352,5 @@ fn honest_total(g: &Guard, who: &[&str], f: u64) -> u128 {
 fn dead_and_open(g: &mut Guard, w: &mut W) {
     w.t += 3 * DAY + 1;
     w.at("alice.testnet", 0);
-    g.start_takeover(acc("meme.sputnikv2.testnet"));
+    g.t_start(w, acc("meme.sputnikv2.testnet"));
 }

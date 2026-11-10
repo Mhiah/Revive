@@ -8,17 +8,19 @@
 use near_sdk::json_types::{Base58CryptoHash, U128};
 use near_sdk::serde_json::{self, json, Value};
 use near_sdk::store::Vector;
-use near_sdk::{env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise, PromiseError};
+use near_sdk::{env, ext_contract, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise};
 
 const CODE_KEY: &[u8] = b"code";
 const GUARD_KEY: &[u8] = b"guard";
 /// NEP-145 registration the factory pays so the guard can hold the token.
-const TOKEN_REGISTRATION: u128 = 1_250_000_000_000_000_000_000; // 0.00125 NEAR
+/// Twice the usual 0.00125 NEAR, for tokens that charge a little more; any excess comes back to the factory.
+const TOKEN_REGISTRATION: u128 = 2_500_000_000_000_000_000_000; // 0.0025 NEAR
 const GAS_METADATA: Gas = Gas::from_tgas(5);
 const GAS_CONNECT_STEP: Gas = Gas::from_tgas(230);
 const GAS_GUARD_INIT: Gas = Gas::from_tgas(60);
 const GAS_AFTER_CREATE: Gas = Gas::from_tgas(40);
 const GAS_STORAGE_DEPOSIT: Gas = Gas::from_tgas(10);
+const GAS_REGISTERED: Gas = Gas::from_tgas(5);
 /// Room for the coin's state on top of its code: account, config, first holders, lore.
 const STATE_BYTES: u128 = 10_000;
 const GAS_FOR_INIT: Gas = Gas::from_tgas(60);
@@ -62,6 +64,9 @@ pub struct CoinEntry {
 #[derive(PanicOnDefault)]
 pub struct Factory {
     owner: AccountId,
+    /// The only steward suffixes coins from this factory may use, fixed when the factory
+    /// is created (e.g. [".sputnikv2.testnet"]). Launch and connect fill in the first one.
+    dao_suffixes: Vec<String>,
     code_hash: Option<Vec<u8>>,
     code_len: u64,
     guard_hash: Option<Vec<u8>>,
@@ -72,8 +77,12 @@ pub struct Factory {
 #[near]
 impl Factory {
     #[init]
-    pub fn new(owner: AccountId) -> Self {
-        Self { owner, code_hash: None, code_len: 0, guard_hash: None, guard_len: 0, coins: Vector::new(StorageKey::Coins) }
+    pub fn new(owner: AccountId, dao_suffixes: Vec<String>) -> Self {
+        require!(!dao_suffixes.is_empty(), "name at least one DAO suffix");
+        for s in &dao_suffixes {
+            require!(s.starts_with('.') && s.len() > 1, "each DAO suffix must start with '.'");
+        }
+        Self { owner, dao_suffixes, code_hash: None, code_len: 0, guard_hash: None, guard_len: 0, coins: Vector::new(StorageKey::Coins) }
     }
 
     /// Owner stores the Revive wasm, sent as the raw transaction input. Once only.
@@ -99,6 +108,8 @@ impl Factory {
         let deposit = env::attached_deposit().as_yoctonear();
         let cost = self.get_connect_cost().0;
         require!(deposit >= cost, format!("attach at least {} yoctoNEAR (get_connect_cost)", cost));
+        let mut config = config;
+        self.apply_dao_suffix(&mut config);
         let token_id: AccountId = config
             .get("token_id")
             .and_then(Value::as_str)
@@ -122,10 +133,15 @@ impl Factory {
         config: Value,
         creator: AccountId,
         deposit: U128,
-        #[callback_result] meta: Result<TokenMetadata, PromiseError>,
     ) -> Promise {
-        let Ok(meta) = meta else {
-            env::log_str("not a NEP-141 token: ft_metadata failed; refunding");
+        // Read the answer by hand: a token that returns odd metadata must get a refund,
+        // not a panic that would leave the deposit stuck in this keyless factory.
+        let meta = env::promise_result_checked(0, 100_000)
+            .ok()
+            .and_then(|raw| serde_json::from_slice::<TokenMetadata>(&raw).ok())
+            .filter(|m| m.decimals <= 32 && !m.symbol.is_empty());
+        let Some(meta) = meta else {
+            env::log_str("not a NEP-141 token (ft_metadata failed or was malformed); refunding");
             return Promise::new(creator).transfer(NearToken::from_yoctonear(deposit.0));
         };
         let storage = (self.guard_len as u128 + STATE_BYTES) * env::storage_byte_cost().as_yoctonear();
@@ -138,6 +154,7 @@ impl Factory {
         obj.insert("decimals".into(), json!(meta.decimals));
         obj.insert("creator".into(), json!(creator));
         let token_id = obj.get("token_id").cloned().unwrap();
+        let (meta_name, meta_symbol): (String, String) = (meta.name.chars().take(64).collect(), meta.symbol.chars().take(16).collect());
         let args = serde_json::to_vec(&json!({ "config": config })).unwrap();
         let code = env::storage_read(GUARD_KEY).unwrap();
         Promise::new(account.clone())
@@ -147,8 +164,8 @@ impl Factory {
             .function_call("new", args, NearToken::from_yoctonear(treasury), GAS_GUARD_INIT)
             .then(Self::ext(env::current_account_id()).with_static_gas(GAS_AFTER_CREATE).on_guard_created(
                 account,
-                meta.name,
-                meta.symbol,
+                meta_name,
+                meta_symbol,
                 creator,
                 serde_json::from_value(token_id).unwrap(),
                 deposit,
@@ -183,10 +200,25 @@ impl Factory {
             "standard": "revive-factory", "version": "1.0.0", "event": "connected",
             "data": [{ "account_id": account_id, "token_id": token_id, "creator": creator }]
         })));
-        ext_token::ext(token_id)
+        ext_token::ext(token_id.clone())
             .with_static_gas(GAS_STORAGE_DEPOSIT)
             .with_attached_deposit(NearToken::from_yoctonear(TOKEN_REGISTRATION))
-            .storage_deposit(Some(account_id), Some(true))
+            .storage_deposit(Some(account_id.clone()), Some(true))
+            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_REGISTERED).on_registered(account_id, token_id))
+    }
+
+    /// If the token refused to register the guard, say so on-chain: anyone can fix it by
+    /// calling `storage_deposit` on the token for the guard, and the app's Verify tab checks it.
+    #[private]
+    pub fn on_registered(&mut self, account_id: AccountId, token_id: AccountId) -> bool {
+        let ok = env::promise_result_checked(0, 1_000).is_ok();
+        if !ok {
+            env::log_str(&format!("EVENT_JSON:{}", json!({
+                "standard": "revive-factory", "version": "1.0.0", "event": "guard_not_registered",
+                "data": [{ "account_id": account_id, "token_id": token_id }]
+            })));
+        }
+        ok
     }
 
     /// Launch a coin as `<name>.<factory>`. The caller becomes the creator and
@@ -204,6 +236,7 @@ impl Factory {
         let creator = env::predecessor_account_id();
         let account: AccountId = format!("{}.{}", name, env::current_account_id()).parse().unwrap_or_else(|_| env::panic_str("invalid name"));
         let mut config = config;
+        self.apply_dao_suffix(&mut config);
         let obj = config.as_object_mut().unwrap_or_else(|| env::panic_str("config must be an object"));
         obj.insert("creator".into(), json!(creator));
         let coin_name = obj.get("name").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -269,6 +302,11 @@ impl Factory {
         })
     }
 
+    /// The steward suffixes this factory's coins may use.
+    pub fn get_dao_suffixes(&self) -> Vec<String> {
+        self.dao_suffixes.clone()
+    }
+
     pub fn get_owner(&self) -> AccountId {
         self.owner.clone()
     }
@@ -297,6 +335,20 @@ impl Factory {
 }
 
 impl Factory {
+    /// Coins may only name stewards under one of this factory's DAO suffixes: the config's
+    /// own value must be on the list, and a missing one becomes the first on the list.
+    fn apply_dao_suffix(&self, config: &mut Value) {
+        let obj = config.as_object_mut().unwrap_or_else(|| env::panic_str("config must be an object"));
+        let suffix = match obj.get("dao_suffix").and_then(Value::as_str) {
+            Some(s) => {
+                require!(self.dao_suffixes.iter().any(|d| d == s), format!("dao_suffix must be one of {:?}", self.dao_suffixes));
+                s.to_string()
+            }
+            None => self.dao_suffixes[0].clone(),
+        };
+        obj.insert("dao_suffix".into(), json!(suffix));
+    }
+
     fn check_name(name: &str) {
         require!(
             name.len() >= 2 && name.len() <= 32 && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_'),
@@ -356,7 +408,7 @@ mod tests {
     #[test]
     fn stores_code_once_and_exposes_hash() {
         ctx("mia.testnet", 0, fake_wasm());
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_code(fake_wasm());
         assert!(f.get_code_hash().is_some());
         assert_eq!(f.get_code_len(), 2_004);
@@ -366,7 +418,7 @@ mod tests {
     #[should_panic(expected = "the code is already stored and can never change")]
     fn code_cannot_change() {
         ctx("mia.testnet", 0, fake_wasm());
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_code(fake_wasm());
         f.internal_store_code(fake_wasm());
     }
@@ -375,7 +427,7 @@ mod tests {
     #[should_panic(expected = "only the owner stores the code")]
     fn only_owner_stores_code() {
         ctx("mallory.testnet", 0, fake_wasm());
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_code(fake_wasm());
     }
 
@@ -383,7 +435,7 @@ mod tests {
     #[should_panic(expected = "name must be 2-32 chars")]
     fn rejects_bad_names() {
         ctx("mia.testnet", 0, fake_wasm());
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_code(fake_wasm());
         ctx("bob.testnet", 2 * 10u128.pow(24), vec![]);
         let _ = f.launch("Bad.Name".into(), json!({ "name": "x", "symbol": "X" }));
@@ -393,7 +445,7 @@ mod tests {
     #[should_panic(expected = "attach at least")]
     fn launch_needs_storage_deposit() {
         ctx("mia.testnet", 0, fake_wasm());
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_code(fake_wasm());
         ctx("bob.testnet", 1, vec![]);
         let _ = f.launch("nine".into(), json!({ "name": "Nine", "symbol": "NINE" }));
@@ -402,7 +454,7 @@ mod tests {
     #[test]
     fn guard_code_once_and_connect_cost() {
         ctx("mia.testnet", 0, vec![]);
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_guard_code(fake_wasm());
         assert!(f.get_guard_code_hash().is_some());
         assert_eq!(f.get_connect_cost().0, (2_004 + 10_000) * env::storage_byte_cost().as_yoctonear() + TOKEN_REGISTRATION);
@@ -414,7 +466,7 @@ mod tests {
     #[should_panic(expected = "config.token_id must be a token account")]
     fn connect_needs_a_token() {
         ctx("mia.testnet", 0, vec![]);
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_guard_code(fake_wasm());
         ctx("bob.testnet", 5 * 10u128.pow(24), vec![]);
         let _ = f.connect("meme".into(), json!({ "pulse_interval_secs": 60 }));
@@ -423,7 +475,7 @@ mod tests {
     #[test]
     fn connect_builds_the_metadata_check() {
         ctx("mia.testnet", 0, vec![]);
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_guard_code(fake_wasm());
         ctx("bob.testnet", 5 * 10u128.pow(24), vec![]);
         let _ = f.connect("meme".into(), json!({ "token_id": "meme.cooking.testnet" }));
@@ -432,7 +484,7 @@ mod tests {
     #[test]
     fn launch_cost_follows_code_size() {
         ctx("mia.testnet", 0, vec![]);
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_code(fake_wasm());
         assert_eq!(f.get_launch_cost().0, (2_004 + 10_000) * env::storage_byte_cost().as_yoctonear());
     }
@@ -440,7 +492,7 @@ mod tests {
     #[test]
     fn launch_builds_the_promise() {
         ctx("mia.testnet", 0, fake_wasm());
-        let mut f = Factory::new("mia.testnet".parse().unwrap());
+        let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
         f.internal_store_code(fake_wasm());
         ctx("bob.testnet", 2 * 10u128.pow(24), vec![]);
         let _ = f.launch("nine".into(), json!({ "name": "Nine", "symbol": "NINE" }));

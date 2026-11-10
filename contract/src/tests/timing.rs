@@ -31,7 +31,7 @@ fn no_takeover_at_the_deadline_second() {
     early_holders(&mut c, &w);
     w.wait(3 * DAY);
     w.at("alice.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn a_vote_in_the_last_second_counts() {
     dead_and_open(&mut c, &mut w);
     w.wait(DAY - 1);
     w.at("bob.testnet", 0);
-    let b = c.vote(true);
+    let b = c.t_vote(&w, true);
     assert!(b.weight.0 > 0);
 }
 
@@ -55,7 +55,7 @@ fn a_vote_at_the_closing_second_is_refused() {
     dead_and_open(&mut c, &mut w);
     w.wait(DAY);
     w.at("bob.testnet", 0);
-    c.vote(true);
+    c.t_vote(&w, true);
 }
 
 #[test]
@@ -65,10 +65,10 @@ fn finalizing_one_second_early_is_refused() {
     let mut c = launch(&w);
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
-    c.vote(true);
+    c.t_vote(&w, true);
     w.wait(DAY - 1);
     w.at("bob.testnet", 0);
-    c.finalize_takeover();
+    c.t_finalize(&w);
 }
 
 #[test]
@@ -77,10 +77,10 @@ fn finalizing_at_the_closing_second_works() {
     let mut c = launch(&w);
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
-    c.vote(true);
+    c.t_vote(&w, true);
     w.wait(DAY);
     w.at("bob.testnet", 0);
-    assert!(c.finalize_takeover());
+    assert!(c.t_finalize(&w));
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn a_comeback_in_the_last_second_of_the_vote_cancels_it() {
     let mut c = launch(&w);
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
-    c.vote(true);
+    c.t_vote(&w, true);
     w.wait(DAY - 1);
     w.at("dev.testnet", 2 * NEAR);
     c.pulse();
@@ -109,13 +109,13 @@ fn a_tie_is_a_no() {
     }
     w.wait(3 * DAY + 1);
     w.at("p.testnet", 0);
-    c.start_takeover(acc("ninecat.sputnikv2.testnet"));
-    c.vote(true);
+    c.t_start(&w, acc("ninecat.sputnikv2.testnet"));
+    c.t_vote(&w, true);
     w.at("q.testnet", 0);
-    c.vote(false);
+    c.t_vote(&w, false);
     w.wait(DAY);
     w.at("q.testnet", 0);
-    assert!(!c.finalize_takeover(), "equal weights: yes does not beat no");
+    assert!(!c.t_finalize(&w), "equal weights: yes does not beat no");
 }
 
 #[test]
@@ -124,17 +124,17 @@ fn a_failed_takeover_can_be_followed_by_another() {
     let mut c = launch(&w);
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
-    c.vote(false);
+    c.t_vote(&w, false);
     w.wait(DAY);
     w.at("bob.testnet", 0);
-    assert!(!c.finalize_takeover());
-    c.start_takeover(acc("second.sputnikv2.testnet"));
-    c.vote(true);
+    assert!(!c.t_finalize(&w));
+    c.t_start(&w, acc("second.sputnikv2.testnet"));
+    c.t_vote(&w, true);
     w.at("alice.testnet", 0);
-    c.vote(true);
+    c.t_vote(&w, true);
     w.wait(DAY);
     w.at("carol.testnet", 0);
-    assert!(c.finalize_takeover());
+    assert!(c.t_finalize(&w));
     let s = c.get_status();
     assert_eq!(s.keeper, acc("second.sputnikv2.testnet"));
     assert_eq!(s.takeover_count, 2);
@@ -146,10 +146,10 @@ fn a_revival_restarts_the_clock() {
     let mut c = launch(&w);
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
-    c.vote(true);
+    c.t_vote(&w, true);
     w.wait(DAY);
     w.at("bob.testnet", 0);
-    c.finalize_takeover();
+    c.t_finalize(&w);
     let s = c.get_status();
     assert_eq!(s.status, "alive");
     assert_eq!(s.flatline_at, w.t + 3 * DAY, "the DAO gets a full interval");
@@ -164,10 +164,10 @@ fn the_dao_keeps_it_alive_after_a_revival() {
     let mut c = launch(&w);
     early_holders(&mut c, &w);
     dead_and_open(&mut c, &mut w);
-    c.vote(true);
+    c.t_vote(&w, true);
     w.wait(DAY);
     w.at("bob.testnet", 0);
-    c.finalize_takeover();
+    c.t_finalize(&w);
     for _ in 0..4 {
         w.wait(2 * DAY);
         w.at("ninecat.sputnikv2.testnet", 0);

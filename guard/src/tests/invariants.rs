@@ -65,14 +65,14 @@ fn random_histories_keep_the_guards_books_balanced() {
                     if let Some(tk) = s.takeover.clone() {
                         if w.t >= tk.ends_at {
                             w.at("anyone.testnet", 0);
-                            if g.finalize_takeover() {
+                            if g.t_finalize(&w) {
                                 lives += 1;
                             }
                         } else {
                             let p = PEOPLE[rng.below(5) as usize];
                             if !voted.contains(&(tk.id, p)) && g.weight_at(&acc(p), tk.flatline_at) > 0 {
                                 w.at(p, 0);
-                                g.vote(rng.below(3) > 0);
+                                g.t_vote(&w, rng.below(3) > 0);
                                 voted.insert((tk.id, p));
                             }
                         }
@@ -81,7 +81,7 @@ fn random_histories_keep_the_guards_books_balanced() {
                         if g.weight_at(&acc(p), s.flatline_at) > 0 {
                             daos += 1;
                             w.at(p, 0);
-                            g.start_takeover(acc(&format!("d{daos}.sputnikv2.testnet")));
+                            g.t_start(&w, acc(&format!("d{daos}.sputnikv2.testnet")));
                         }
                     }
                 }

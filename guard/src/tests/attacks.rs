@@ -24,11 +24,11 @@ fn quorum_cannot_be_dodged_by_late_staking() {
     w.t += 13 * DAY;
     deliver(&mut g, &w, "whale.testnet", 900_000_000, "stake");
     w.at("carol.testnet", 0);
-    g.start_takeover(acc("meme.sputnikv2.testnet"));
-    g.vote(true);
+    g.t_start(&w, acc("meme.sputnikv2.testnet"));
+    g.t_vote(&w, true);
     w.t += DAY;
     w.at("anyone.testnet", 0);
-    assert!(!g.finalize_takeover(), "carol's ~17% must not pass a 20% quorum");
+    assert!(!g.t_finalize(&w), "carol's ~17% must not pass a 20% quorum");
 }
 
 #[test]
@@ -54,13 +54,13 @@ fn a_dao_that_staked_before_its_election_does_not_inflate_the_next_quorum() {
     deliver(&mut g, &w, "dao.sputnikv2.testnet", 400_000_000, "stake");
     w.t += 3 * DAY + 1;
     w.at("alice.testnet", 0);
-    g.start_takeover(acc("dao.sputnikv2.testnet"));
-    g.vote(true);
+    g.t_start(&w, acc("dao.sputnikv2.testnet"));
+    g.t_vote(&w, true);
     w.at("bob.testnet", 0);
-    g.vote(true);
+    g.t_vote(&w, true);
     w.t += DAY;
     w.at("bob.testnet", 0);
-    assert!(g.finalize_takeover());
+    assert!(g.t_finalize(&w));
     // The DAO is keeper now and can't vote, so its stake must not count toward the next quorum.
     let f = g.flatline_at();
     assert_eq!(g.weight_at(&acc("dao.sputnikv2.testnet"), f), 0);
@@ -74,8 +74,8 @@ fn nobody_votes_twice() {
     let mut w = W { t: START };
     let mut g = setup(&w);
     dead_and_open(&mut g, &mut w);
-    g.vote(true);
-    g.vote(true);
+    g.t_vote(&w, true);
+    g.t_vote(&w, true);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn lookalike_dao_names_are_refused() {
     let mut g = setup(&w);
     w.t += 3 * DAY + 1;
     w.at("alice.testnet", 0);
-    g.start_takeover(acc("fakesputnikv2.testnet"));
+    g.t_start(&w, acc("fakesputnikv2.testnet"));
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn one_takeover_at_a_time() {
     let mut g = setup(&w);
     dead_and_open(&mut g, &mut w);
     w.at("bob.testnet", 0);
-    g.start_takeover(acc("other.sputnikv2.testnet"));
+    g.t_start(&w, acc("other.sputnikv2.testnet"));
 }
 
 #[test]
@@ -125,11 +125,11 @@ fn the_elected_dao_cannot_stake_after_winning() {
     let mut w = W { t: START };
     let mut g = setup(&w);
     dead_and_open(&mut g, &mut w);
-    g.vote(true);
+    g.t_vote(&w, true);
     w.at("bob.testnet", 0);
-    g.vote(true);
+    g.t_vote(&w, true);
     w.t += DAY;
     w.at("bob.testnet", 0);
-    assert!(g.finalize_takeover());
+    assert!(g.t_finalize(&w));
     deliver(&mut g, &w, "meme.sputnikv2.testnet", 1_000, "stake");
 }

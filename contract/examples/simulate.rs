@@ -10,7 +10,7 @@ use near_sdk::json_types::U128;
 use near_sdk::serde_json::{json, Value};
 use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::{testing_env, AccountId, NearToken};
-use revive::{LaunchConfig, Revive};
+use revive::{LaunchConfig, Revive, TAKEOVER_BOND};
 
 const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 const TOKEN: u128 = 1_000_000_000_000_000_000;
@@ -82,7 +82,7 @@ impl Sim {
         });
         let mut s = Sim { c, t: START, days: vec![], events: vec![], rng: 42 };
         for (h, _) in HOLDERS.iter().chain([("whale", 0)].iter()) {
-            s.at(h, 1_250_000_000_000_000_000_000);
+            s.at(h, 2_000_000_000_000_000_000_000);
             s.c.storage_deposit(None, None);
         }
         // Launch week: early holders buy from the pool.
@@ -148,7 +148,7 @@ impl Sim {
 
     fn open_takeover(&mut self, day: u64, dao: &str) {
         let proposer = HOLDERS[1].0;
-        let r = self.try_call(proposer, 0, |c| {
+        let r = self.try_call(proposer, TAKEOVER_BOND + NEAR / 100, |c| {
             c.start_takeover(dao.parse().unwrap());
         });
         match r {
@@ -162,7 +162,7 @@ impl Sim {
         let mut no = 0;
         for (i, (h, _)) in HOLDERS.iter().enumerate() {
             let support = (i as f64) < (HOLDERS.len() as f64 * yes_share);
-            if self.try_call(h, 0, |c| { c.vote(support); }).is_ok() {
+            if self.try_call(h, NEAR / 100, |c| { c.vote(support); }).is_ok() {
                 if support { yes += 1 } else { no += 1 }
             }
         }
@@ -170,7 +170,7 @@ impl Sim {
     }
 
     fn finalize(&mut self, day: u64) -> bool {
-        self.at("anyone", 0);
+        self.at("anyone", NEAR / 100);
         let burned_before = self.c.get_status().dev_burned.0;
         let ok = self.c.finalize_takeover();
         let s = self.c.get_status();
@@ -245,7 +245,7 @@ fn run(p: &Plan) -> Value {
             s.open_takeover(day, &dao);
             vote_opened = Some(day);
             if p.whale_buys_after_death && keeper == "dev" {
-                let r = s.try_call("whale", 0, |c| { c.vote(false); });
+                let r = s.try_call("whale", NEAR / 100, |c| { c.vote(false); });
                 if let Err(e) = r {
                     s.event(day, "rejected", &format!("whale's 300M vote refused: {}", e.split(':').next().unwrap_or(&e)));
                 }
@@ -290,15 +290,15 @@ fn quorum_case(quorum_bps: u16, voters: &'static [usize], label: &'static str) -
     let mut s = Sim::with_params(quorum_bps, 3 * DAY);
     s.t = START + 4 * DAY;
     let proposer = HOLDERS[voters[0]].0;
-    let _ = s.try_call(proposer, 0, |c| { c.start_takeover("ninelives-1.sputnikv2.testnet".parse().unwrap()); });
+    let _ = s.try_call(proposer, TAKEOVER_BOND + NEAR / 100, |c| { c.start_takeover("ninelives-1.sputnikv2.testnet".parse().unwrap()); });
     for &i in voters {
-        let _ = s.try_call(HOLDERS[i].0, 0, |c| { c.vote(true); });
+        let _ = s.try_call(HOLDERS[i].0, NEAR / 100, |c| { c.vote(true); });
     }
     s.at("observer", 0);
     let tk = s.c.get_status().takeover.unwrap();
     let yes_pct = tk.yes.0 as f64 * 100.0 / tk.total_eligible.0 as f64;
     s.t += DAY;
-    s.at("anyone", 0);
+    s.at("anyone", NEAR / 100);
     let passed = s.c.finalize_takeover();
     json!({ "quorum_pct": quorum_bps / 100, "voters": label, "yes_pct": (yes_pct * 10.0).round() / 10.0, "passed": passed })
 }

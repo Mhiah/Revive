@@ -35,7 +35,7 @@ fn factory() -> Factory {
     near_sdk::mock::with_mocked_blockchain(|b| {
         let _ = b.take_storage();
     });
-    let mut f = Factory::new("mia.testnet".parse().unwrap());
+    let mut f = Factory::new("mia.testnet".parse().unwrap(), vec![".sputnikv2.testnet".to_string()]);
     f.internal_store_code(wasm());
     f.internal_store_guard_code(wasm());
     f
@@ -68,8 +68,68 @@ fn a_failed_launch_records_nothing() {
 fn a_token_that_fails_its_metadata_check_is_refunded() {
     let mut f = factory();
     callback_with(PromiseResult::Failed);
-    let _ = f.on_token_checked("meme".into(), json!({ "token_id": "notatoken.testnet" }), acc("bob.testnet"), U128(3 * NEAR), Err(PromiseError::Failed));
+    let _ = f.on_token_checked("meme".into(), json!({ "token_id": "notatoken.testnet" }), acc("bob.testnet"), U128(3 * NEAR));
     assert_eq!(f.get_coin_count(), 0);
+}
+
+/// A token whose ft_metadata answers with the wrong shape gets the same refund. Before,
+/// the callback panicked while reading the answer and the deposit stayed in the factory.
+#[test]
+fn a_token_with_malformed_metadata_is_refunded_not_stuck() {
+    for bad in [&b"{\"name\":\"x\"}"[..], b"not json", b"{\"name\":\"x\",\"symbol\":\"X\",\"decimals\":200}", b"{\"name\":\"x\",\"symbol\":\"\",\"decimals\":18}"] {
+        let mut f = factory();
+        callback_with(PromiseResult::Successful(bad.to_vec()));
+        let _ = f.on_token_checked("meme".into(), json!({ "token_id": "odd.testnet" }), acc("bob.testnet"), U128(3 * NEAR));
+        assert_eq!(f.get_coin_count(), 0);
+    }
+}
+
+#[test]
+fn a_real_token_goes_on_to_create_the_guard() {
+    let mut f = factory();
+    let meta = br#"{"spec":"ft-1.0.0","name":"Meme","symbol":"MEME","decimals":18,"icon":null}"#;
+    callback_with(PromiseResult::Successful(meta.to_vec()));
+    let _ = f.on_token_checked("meme".into(), json!({ "token_id": "meme.testnet", "dao_suffix": ".sputnikv2.testnet" }), acc("bob.testnet"), U128(3 * NEAR));
+}
+
+fn panics<F: FnOnce() + std::panic::UnwindSafe>(f: F) -> Option<String> {
+    std::panic::catch_unwind(f).err().map(|e| {
+        e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
+    })
+}
+
+#[test]
+fn launch_only_accepts_the_factorys_dao_suffixes() {
+    let mut f = factory();
+    at("bob.testnet", 5 * NEAR);
+    let cfg = json!({ "name": "Nine", "symbol": "NINE", "dao_suffix": ".testnet" });
+    let err = panics(std::panic::AssertUnwindSafe(|| { let _ = f.launch("nine".into(), cfg.clone()); })).expect("a made-up suffix is refused");
+    assert!(err.contains("dao_suffix must be one of"), "{err}");
+}
+
+#[test]
+fn a_missing_dao_suffix_becomes_the_factorys_own() {
+    let f = factory();
+    let mut cfg = json!({ "name": "Nine" });
+    f.apply_dao_suffix(&mut cfg);
+    assert_eq!(cfg["dao_suffix"], ".sputnikv2.testnet");
+    assert_eq!(f.get_dao_suffixes(), vec![".sputnikv2.testnet".to_string()]);
+}
+
+#[test]
+fn a_factory_needs_at_least_one_valid_dao_suffix() {
+    at("mia.testnet", 0);
+    assert!(panics(|| { let _ = Factory::new(acc("mia.testnet"), vec![]); }).is_some());
+    assert!(panics(|| { let _ = Factory::new(acc("mia.testnet"), vec!["sputnik".into()]); }).is_some());
+}
+
+#[test]
+fn a_guard_the_token_refused_to_register_is_flagged() {
+    let mut f = factory();
+    callback_with(PromiseResult::Failed);
+    assert!(!f.on_registered(acc("meme.revive.testnet"), acc("meme.testnet")));
+    let logs = near_sdk::test_utils::get_logs();
+    assert!(logs.iter().any(|l| l.contains("guard_not_registered")), "{logs:?}");
 }
 
 #[test]
@@ -103,7 +163,7 @@ fn the_guard_code_cannot_change() {
 #[should_panic(expected = "only the owner stores the code")]
 fn only_the_owner_stores_guard_code() {
     at("mia.testnet", 0);
-    let mut f = Factory::new(acc("mia.testnet"));
+    let mut f = Factory::new(acc("mia.testnet"), vec![".sputnikv2.testnet".to_string()]);
     at("mallory.testnet", 0);
     f.internal_store_guard_code(wasm());
 }
@@ -112,7 +172,7 @@ fn only_the_owner_stores_guard_code() {
 #[should_panic(expected = "input is not a wasm file")]
 fn non_wasm_code_is_refused() {
     at("mia.testnet", 0);
-    let mut f = Factory::new(acc("mia.testnet"));
+    let mut f = Factory::new(acc("mia.testnet"), vec![".sputnikv2.testnet".to_string()]);
     f.internal_store_code(vec![0u8; 5_000]);
 }
 
@@ -120,7 +180,7 @@ fn non_wasm_code_is_refused() {
 #[should_panic(expected = "the factory has no guard code yet")]
 fn connect_needs_the_guard_code() {
     at("mia.testnet", 0);
-    let mut f = Factory::new(acc("mia.testnet"));
+    let mut f = Factory::new(acc("mia.testnet"), vec![".sputnikv2.testnet".to_string()]);
     at("bob.testnet", 5 * NEAR);
     let _ = f.connect("meme".into(), json!({ "token_id": "meme.cooking.testnet" }));
 }

@@ -4,10 +4,10 @@ use super::*;
 fn revived(c: &mut Revive, w: &mut World) {
     early_holders(c, w);
     dead_and_open(c, w);
-    c.vote(true);
+    c.t_vote(w, true);
     w.wait(DAY);
     w.at("bob.testnet", 0);
-    assert!(c.finalize_takeover());
+    assert!(c.t_finalize(w));
 }
 
 #[test]

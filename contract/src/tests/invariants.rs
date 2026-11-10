@@ -114,15 +114,17 @@ fn run(seed: u64, steps: usize) {
                 if let Some(tk) = s.takeover.clone() {
                     if t >= tk.ends_at {
                         w.at("bob.testnet", 0);
-                        if c.finalize_takeover() {
+                        if c.t_finalize(&w) {
                             l.lives += 1;
+                        } else {
+                            l.treasury += TAKEOVER_BOND; // a failed takeover's bond stays with the coin
                         }
                     } else {
                         let v = PEOPLE[1 + rng.below(5) as usize];
                         let a = acc(v);
                         if a != c.keeper && a != c.creator && !l.ballots.contains(&(tk.id, v.to_string())) && c.weight_at(&a, tk.flatline_at) > 0 {
                             w.at(v, 0);
-                            c.vote(rng.below(3) > 0);
+                            c.t_vote(&w, rng.below(3) > 0);
                             l.ballots.insert((tk.id, v.to_string()));
                         }
                     }
@@ -132,7 +134,7 @@ fn run(seed: u64, steps: usize) {
                     if a != c.keeper && a != c.creator && c.weight_at(&a, s.flatline_at) > 0 {
                         daos += 1;
                         w.at(p, 0);
-                        c.start_takeover(acc(&format!("dao{daos}.sputnikv2.testnet")));
+                        c.t_start(&w, acc(&format!("dao{daos}.sputnikv2.testnet")));
                     }
                 }
             }

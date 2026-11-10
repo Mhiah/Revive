@@ -68,6 +68,10 @@ export async function run(opts) {
   const as = (id) => new Account(id, provider, key.toString());
   const call = (who, contractId, methodName, args = {}, deposit = "0", gas = teraToGas("30")) =>
     who.callFunction({ contractId, methodName, args, deposit, gas });
+  // Takeover calls carry NEAR: a 0.1 NEAR bond to open one, and a little for each ballot's
+  // and history entry's storage (the contract refunds whatever it doesn't use).
+  const BOND = nearToYocto("0.11").toString();
+  const POCKET = nearToYocto("0.01").toString();
   const fails = async (p, expect) => {
     try { await p; } catch (e) { return String(e.message || e).includes(expect); }
     return false;
@@ -76,9 +80,10 @@ export async function run(opts) {
   // ------------------------------------------------------------ accounts
   // Fund each account with what it needs: storage is 1 NEAR per 100 KB.
   const want = (x) => stories.includes(x);
-  const needCoin = want("coins") || want("dao") || want("alive");
+  // "site" deploys and locks a factory with both codes for the app, and launches nothing.
+  const needCoin = want("coins") || want("dao") || want("alive") || want("site");
   // A fresh factory for the site stores both codes, so it can launch and connect.
-  const needGuard = want("guard") || (want("alive") && !existingFactory);
+  const needGuard = want("guard") || ((want("alive") || want("site")) && !existingFactory);
   const size = async (f) => (await readFile(f)).length;
   const coinBytes = needCoin ? await size(coinWasm) : 0;
   const guardBytes = needGuard ? await size(guardWasm) : 0;
@@ -86,7 +91,7 @@ export async function run(opts) {
   const factoryBytes = await size(factoryWasm);
   const perByte = 1e-5;                                         // NEAR per byte
   const launchCost = (coinBytes + 10_000) * perByte;            // matches get_launch_cost
-  const connectCost = (guardBytes + 10_000) * perByte + 0.00125; // matches get_connect_cost
+  const connectCost = (guardBytes + 10_000) * perByte + 0.0025;  // matches get_connect_cost
   const factoryFund = existingFactory ? 0 : (factoryBytes + coinBytes + guardBytes + 4_000) * perByte + 0.3;
   const devFund = (want("coins") ? 2 * (launchCost + 0.1) + 0.2 : 0) + (want("guard") ? connectCost + 0.1 + 0.2 : 0)
     + (want("dao") ? launchCost + 0.2 + 0.2 : 0) + (want("alive") ? launchCost + 0.2 + 0.2 : 0) + 0.3;
@@ -95,9 +100,10 @@ export async function run(opts) {
   const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
   // In the DAO story alice proposes, which needs the DAO's 1 NEAR proposal bond (refunded when it passes).
   const aliceNear = want("dao") ? r2(Number(holderNear) + 1.1) : holderNear;
-  const names = { dev: r2(devFund), alice: aliceNear, bob: holderNear, carol: holderNear, whale: holderNear };
+  const onlySite = stories.every((x) => x === "site");          // just the factory: no demo accounts
+  const names = onlySite ? {} : { dev: r2(devFund), alice: aliceNear, bob: holderNear, carol: holderNear, whale: holderNear };
   const standIn = !givenSteward && (want("coins") || want("guard"));
-  const need = factoryFund + devFund + tokenFund + daoFund + Number(aliceNear) + 3 * Number(holderNear) + (standIn ? 0.35 : 0) + 0.3;
+  const need = factoryFund + (onlySite ? 0 : devFund + tokenFund + daoFund + Number(aliceNear) + 3 * Number(holderNear)) + (standIn ? 0.35 : 0) + 0.3;
   log(`Stories: ${stories.join(", ")}. Wasm bytes: coin ${coinBytes}, guard ${guardBytes}, token ${tokenBytes}, factory ${factoryBytes}`);
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
@@ -139,7 +145,16 @@ export async function run(opts) {
   log(`Deploying factory ${factoryId}`);
   const factory = as(factoryId);
   await factory.deployContract(await readFile(factoryWasm));
-  await call(factory, factoryId, "new", { owner: rootId });
+  // The factory only lets its coins name stewards under these suffixes, fixed for good here.
+  const daoSuffixes = [...new Set([
+    ...(sputnikFactory ? [`.${sputnikFactory}`] : []),
+    ...(want("dao") && !sputnikFactory ? [`.sputnikv2.${rootId}`] : []),
+    ...(daoSuffix ? [daoSuffix] : []),
+    ...(standIn ? [suffix] : []),
+  ])];
+  if (!daoSuffixes.length) daoSuffixes.push(".sputnikv2.testnet");
+  log(`  stewards allowed: ${daoSuffixes.join(", ")}`);
+  await call(factory, factoryId, "new", { owner: rootId, dao_suffixes: daoSuffixes });
   if (needCoin) {
     await root.callFunction({ contractId: factoryId, methodName: "store_code", args: new Uint8Array(await readFile(coinWasm)), gas: teraToGas("300") });
     codeHash = await view(factoryId, "get_code_hash");
@@ -183,7 +198,7 @@ export async function run(opts) {
     check(ok, `${symbol} launched at ${coinId}`);
     const s = await view(coinId, "get_status");
     check(s.creator === acc.dev.accountId && s.keeper === acc.dev.accountId, `${symbol} creator and keeper is ${acc.dev.accountId}`);
-    for (const h of ["alice", "bob", "carol", "whale"]) await call(acc[h], coinId, "storage_deposit", {}, nearToYocto("0.00125").toString());
+    for (const h of ["alice", "bob", "carol", "whale"]) await call(acc[h], coinId, "storage_deposit", {}, nearToYocto("0.002").toString());
     const give = { alice: 300_000_000, bob: 200_000_000, carol: 100_000_000 };
     for (const [h, n] of Object.entries(give)) await call(acc.dev, coinId, "ft_transfer", { receiver_id: acc[h].accountId, amount: tokens(n) }, "1");
     await call(acc.dev, coinId, "pulse");
@@ -217,14 +232,14 @@ export async function run(opts) {
   check((await view(nine, "get_status")).status === "flatlined", "NINE flatlined");
   await call(acc.dev, nine, "ft_transfer", { receiver_id: acc.whale.accountId, amount: tokens(250_000_000) }, "1");
   check((await view(nine, "get_vote_weight", { account_id: acc.whale.accountId })) === "0", "whale bought 250M after the death: weight 0");
-  await call(acc.alice, nine, "start_takeover", { steward });
+  await call(acc.alice, nine, "start_takeover", { steward }, BOND);
   check((await view(nine, "get_status")).status === "voting", `takeover opened for ${steward}`);
-  await call(acc.alice, nine, "vote", { support: true });
-  check(await fails(call(acc.whale, nine, "vote", { support: false }), "no voting weight"), "whale's vote refused");
-  await call(acc.bob, nine, "vote", { support: true });
-  await call(acc.carol, nine, "vote", { support: false });
+  await call(acc.alice, nine, "vote", { support: true }, POCKET);
+  check(await fails(call(acc.whale, nine, "vote", { support: false }, POCKET), "no voting weight"), "whale's vote refused");
+  await call(acc.bob, nine, "vote", { support: true }, POCKET);
+  await call(acc.carol, nine, "vote", { support: false }, POCKET);
   await waitPast(nine, "vote");
-  const revived = await call(acc.bob, nine, "finalize_takeover");
+  const revived = await call(acc.bob, nine, "finalize_takeover", {}, POCKET);
   const s1 = await view(nine, "get_status");
   check(revived === true && s1.keeper === steward && s1.lives === 1, "NINE revived: steward is keeper, lives = 1");
   check(BigInt(s1.dev_burned) === 100_000_000n * TOKEN, "creator's 100M locked tokens burned");
@@ -240,8 +255,8 @@ export async function run(opts) {
   log("Story 2: $BACK's dev comes back mid-vote");
   const back = await launch("back", "BACK");
   await waitPast(back, "flatline");
-  await call(acc.alice, back, "start_takeover", { steward });
-  await call(acc.alice, back, "vote", { support: true });
+  await call(acc.alice, back, "start_takeover", { steward }, BOND);
+  await call(acc.alice, back, "vote", { support: true }, POCKET);
   const before = BigInt((await view(back, "get_status")).treasury);
   check(await fails(call(acc.dev, back, "pulse"), "comeback penalty"), "late pulse without the penalty is refused");
   await call(acc.dev, back, "pulse", {}, nearToYocto("0.2").toString());
@@ -301,6 +316,8 @@ export async function run(opts) {
 
   await ftCall(acc.dev, guardId, 100_000_000, "lock");
   check(BigInt((await view(guardId, "get_status")).dev_locked) === 100_000_000n * TOKEN, "dev locked a 100M $MEME bag in the guard");
+  // Stakers register with the guard once (0.002 NEAR for their entry), then stake.
+  for (const h of ["alice", "bob", "carol", "whale"]) await call(acc[h], guardId, "storage_deposit", {}, nearToYocto("0.002").toString());
   for (const [h, n] of Object.entries({ alice: 300_000_000, bob: 200_000_000, carol: 100_000_000 })) await ftCall(acc[h], guardId, n, "stake");
   check(BigInt((await view(guardId, "get_status")).staked) === 600_000_000n * TOKEN, "holders staked 600M $MEME");
   await call(acc.dev, guardId, "pulse");
@@ -310,13 +327,13 @@ export async function run(opts) {
   await call(acc.dev, tokenId, "ft_transfer", { receiver_id: acc.whale.accountId, amount: tokens(250_000_000) }, "1");
   await ftCall(acc.whale, guardId, 250_000_000, "stake");
   check((await view(guardId, "get_vote_weight", { account_id: acc.whale.accountId })) === "0", "whale staked 250M after the death: weight 0");
-  await call(acc.alice, guardId, "start_takeover", { steward });
-  await call(acc.alice, guardId, "vote", { support: true });
-  check(await fails(call(acc.whale, guardId, "vote", { support: false }), "no voting weight"), "whale's vote refused");
-  await call(acc.bob, guardId, "vote", { support: true });
-  await call(acc.carol, guardId, "vote", { support: false });
+  await call(acc.alice, guardId, "start_takeover", { steward }, BOND);
+  await call(acc.alice, guardId, "vote", { support: true }, POCKET);
+  check(await fails(call(acc.whale, guardId, "vote", { support: false }, POCKET), "no voting weight"), "whale's vote refused");
+  await call(acc.bob, guardId, "vote", { support: true }, POCKET);
+  await call(acc.carol, guardId, "vote", { support: false }, POCKET);
   await waitPast(guardId, "vote");
-  const done = await call(acc.bob, guardId, "finalize_takeover");
+  const done = await call(acc.bob, guardId, "finalize_takeover", {}, POCKET);
   const g1 = await view(guardId, "get_status");
   check(done === true && g1.keeper === steward && g1.lives === 1, "MEME revived: steward is keeper, lives = 1");
   check(BigInt(g1.dev_burned) === 100_000_000n * TOKEN && BigInt(g1.dev_locked) === 0n, "dev's 100M bag sealed in the guard forever");
@@ -377,11 +394,11 @@ export async function run(opts) {
   check((await view(civic, "get_status")).config.dao_suffix === daoSuffix4, `$CIVIC only accepts DAOs ending in ${daoSuffix4}`);
   log("  dev goes silent");
   await waitPast(civic, "flatline");
-  await call(acc.alice, civic, "start_takeover", { steward: daoId });
-  await call(acc.alice, civic, "vote", { support: true });
-  await call(acc.bob, civic, "vote", { support: true });
+  await call(acc.alice, civic, "start_takeover", { steward: daoId }, BOND);
+  await call(acc.alice, civic, "vote", { support: true }, POCKET);
+  await call(acc.bob, civic, "vote", { support: true }, POCKET);
   await waitPast(civic, "vote");
-  const ok4 = await call(acc.bob, civic, "finalize_takeover");
+  const ok4 = await call(acc.bob, civic, "finalize_takeover", {}, POCKET);
   check(ok4 === true, "takeover finalized");
   }
   const c1 = await view(civic, "get_status");
