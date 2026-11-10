@@ -27,10 +27,12 @@ Connecting a token launched elsewhere runs through a second locked factory,
 **A coin that stays alive:** [`here.revive-6tx39.revive.testnet`](https://testnet.nearblocks.io/address/here.revive-6tx39.revive.testnet)
 ($HERE, "Still Here") has a 3-day heartbeat. The [keep-alive workflow](.github/workflows/keep-alive.yml)
 pulses it twice a day, so Flatline Watch always shows a healthy coin next to the revived ones. It comes from
-the current factory, [`revive-6tx39.revive.testnet`](https://testnet.nearblocks.io/address/revive-6tx39.revive.testnet)
-(locked, no keys), which holds the fixed coin and guard code; the site's Launch and Connect use it. The other
-coins on this page were made by the two earlier locked factories and keep the version from before the two quorum
-fixes described under [Tests](#tests). Their stories still show the full mechanic.
+[`revive-6tx39.revive.testnet`](https://testnet.nearblocks.io/address/revive-6tx39.revive.testnet), which holds the
+quorum fixes. The site's Launch and Connect now use the current factory,
+[`revive-5svgh.revive.testnet`](https://testnet.nearblocks.io/address/revive-5svgh.revive.testnet) (locked, no keys), which also enforces the launch limits and
+storage rules described under [Tests](#tests). Every factory is locked, so coins keep the code they were born with:
+the coins from the two first factories keep the version from before the quorum fixes, and none of the earlier coins
+has the launch limits. Their stories still show the full mechanic, and the **Verify** tab checks each coin's own settings.
 
 A takeover by a **real Sputnik DAO**, live on testnet:
 
@@ -58,7 +60,7 @@ Open **Nine Lives** and click the story buttons in order.
 | Click **Activity** | Token transfers over time, every pulse and vote marked, flatlined stretches shaded red |
 | In the simulator, open **Meme Cooked** (tagged *connected*) | A token launched elsewhere: stake, skip time, let the whale buy and stake after the death (no vote), take it over, then **Verify** shows the guard holds every staked and sealed token |
 | Open [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) → **Nine Lives**, click steps 1–11 | The full story with no wallet: a whale's post-death vote is refused, the coin revives, the DAO pulses |
-| `cd contract && cargo test` | `76 passed` (plus `guard`: `35 passed`, `factory`: `24 passed`): [what each group proves](#tests) |
+| `cd contract && cargo test` | `88 passed` (plus `guard`: `44 passed`, `factory`: `30 passed`): [what each group proves](#tests) |
 | `cd contract && cargo run --example simulate` | The [60-day simulation](#60-day-simulation): six scenarios' day-60 results printed; `docs/simulation.json` rewritten |
 | Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | All five stories on a local NEAR node, including connecting an outside token and a takeover by a real Sputnik DAO, every step checked (`All checks passed`) |
 | [testnet-demo run](https://github.com/Mhiah/Revive/actions/workflows/testnet-demo.yml) | The same stories on NEAR testnet, against the coins above |
@@ -224,12 +226,12 @@ back to the contract's lore and current deadline and says so.
 
 ### Tests
 
-**135 unit tests, no network needed.** One command per contract:
+**162 unit tests, no network needed.** One command per contract:
 
 ```bash
-(cd contract && cargo test)   # 76 tests, ~50 s (the random histories take most of it)
-(cd guard && cargo test)      # 35 tests
-(cd factory && cargo test)    # 24 tests
+(cd contract && cargo test)   # 88 tests, ~70 s (the random histories take most of it)
+(cd guard && cargo test)      # 44 tests
+(cd factory && cargo test)    # 30 tests
 ```
 
 Each group proves one kind of claim:
@@ -240,9 +242,10 @@ Each group proves one kind of claim:
 | Attacks | [contract/src/tests/attacks.rs](contract/src/tests/attacks.rs) | 19 | Buying after the death neither votes nor moves the quorum; splitting or hopping wallets adds no weight; no double votes; the creator can't vote, start a takeover or move locked tokens; lookalike DAO names are refused |
 | Timing | [contract/src/tests/timing.rs](contract/src/tests/timing.rs) | 12 | The exact second each deadline flips: pulse due, vote closing, finalizing, a last-second comeback; ties fail; takeovers back to back; a revival restarts the clock |
 | Money | [contract/src/tests/money.rs](contract/src/tests/money.rs) | 21 | Spending exactly the cap, one yocto over, the reset; vesting is linear and never overpays; a revival burns only what wasn't claimed; supply always adds up |
+| Launch rules | [contract/src/tests/launch_rules.rs](contract/src/tests/launch_rules.rs) | 12 | Settings that could switch the takeover off are refused (no vesting, a free comeback, a heartbeat over 30 days, oversized name/icon/links); opening a takeover needs the bond; votes, finalizing and new icons pay for their storage; bonds go back on a pass or a comeback and to the treasury on a fail; spending can't touch the NEAR that pays for storage |
 | Random histories | [contract/src/tests/invariants.rs](contract/src/tests/invariants.rs) | 3 | About 7,000 seeded random steps (transfers, pulses, comebacks, claims, spends, takeovers, votes). After every step: balances add up to supply, the quorum total equals a holder-by-holder sum, no weight beats its ceiling, the treasury matches every deposit and spend |
-| Connected coins | [guard/src/tests.rs](guard/src/tests.rs) and [guard/src/tests/](guard/src/tests) | 35 | Lock and stake only through the real token; late stake buys no vote and doesn't move the quorum; a DAO that staked before its election doesn't inflate the next quorum; failed unstakes and claims roll back; random histories where the guard always holds exactly what it owes |
-| Factory | [factory/src/lib.rs](factory/src/lib.rs) and [factory/src/tests_more.rs](factory/src/tests_more.rs) | 24 | Code stored once and never changed; failed launches and connects are refunded and not listed; names and deposits are checked; the registry pages correctly |
+| Connected coins | [guard/src/tests.rs](guard/src/tests.rs) and [guard/src/tests/](guard/src/tests) | 44 | Lock and stake only through the real token; late stake buys no vote and doesn't move the quorum; a DAO that staked before its election doesn't inflate the next quorum; failed unstakes and claims roll back, always; a later lock vests from when it arrives; a trillion-token, 24-decimal coin fits the maths; stakers pay for their entry; random histories where the guard always holds exactly what it owes |
+| Factory | [factory/src/lib.rs](factory/src/lib.rs) and [factory/src/tests_more.rs](factory/src/tests_more.rs) | 30 | Code stored once and never changed; coins may only name stewards under the factory's own DAO suffixes; failed launches and connects are refunded and not listed, including tokens with malformed metadata; a guard the token won't register is flagged; names and deposits are checked; the registry pages correctly |
 
 **Two bugs these tests found, both fixed:** the quorum's yardstick (the total weight from before the death)
 used a running sum that subtracted weight for tokens moved after the death. Heavy trading after a death
@@ -251,6 +254,16 @@ was elected kept its stake in that yardstick after winning, though it can't vote
 are `eligible_total_ignores_tokens_bought_after_the_death`,
 `late_stake_does_not_shrink_the_eligible_total` and
 `a_dao_that_staked_before_its_election_does_not_inflate_the_next_quorum`.
+
+**What an independent review found next, all fixed in the current factory:** someone calling the factory
+directly could pick settings that switched the takeover off (any account as "DAO", no vesting, a free
+comeback, a heartbeat that never ends); in the guard, a bag locked later could be claimed at once, very large
+stakes of a 24-decimal token overflowed the weight maths, and staker entries cost nothing; votes and history
+entries were stored at the coin's expense; one dust holder could keep the takeover slot busy; and a token
+with malformed metadata left the connect deposit stuck in the factory. Each has a test in
+[launch_rules.rs](contract/src/tests/launch_rules.rs), [guard/src/tests/fixes.rs](guard/src/tests/fixes.rs) or
+[factory/src/tests_more.rs](factory/src/tests_more.rs). The review also showed four tests were weaker than
+their names; they now check what they claim.
 
 **End-to-end on a real NEAR node:** CI starts a local NEAR sandbox and runs
 [scripts/demo-coins.mjs](scripts/demo-coins.mjs): it deploys the factory, stores
@@ -287,10 +300,10 @@ The site is published to GitHub Pages on every push.
 | `claim_vested()` | creator | Only while alive and still keeper. |
 | `fund_treasury()` | anyone | Payable. |
 | `spend(receiver_id, amount, memo)` | keeper | Within `spend_cap` per `spend_period_secs`. |
-| `set_links(icon, links)` | keeper | |
-| `start_takeover(steward)` | holder with weight | After the flatline. |
-| `vote(support)` | holder with weight | One ballot per takeover. |
-| `finalize_takeover()` | anyone | After the vote ends. |
+| `set_links(icon, links)` | keeper | Attach NEAR for the new data's storage (about 0.043 NEAR for a 4 KB icon); the rest is refunded. |
+| `start_takeover(steward)` | holder with weight | After the flatline. Attach the 0.1 NEAR bond plus 0.009 for storage: the bond goes back if the takeover passes or the keeper comes back, and to the treasury if it fails. |
+| `vote(support)` | holder with weight | One ballot per takeover. Attach 0.0025 NEAR for the ballot's storage (excess refunded). |
+| `finalize_takeover()` | anyone | After the vote ends. Attach 0.004 NEAR for the history entry. |
 | `get_status`, `get_vote_weight`, `get_ballot`, `get_lore`, `get_lore_count` | view | |
 | NEP-141 / NEP-145 methods | | `ft_balance_of(<contract>)` returns the creator's locked tokens. |
 
@@ -298,18 +311,19 @@ The site is published to GitHub Pages on every push.
 
 | Method | Who | Notes |
 | --- | --- | --- |
-| `new(owner)` | deployer | |
+| `new(owner, dao_suffixes)` | deployer | The only steward suffixes its coins may use, e.g. `[".sputnikv2.testnet"]`. Fixed for good. |
 | `store_code()` | owner, once | The coin wasm as raw input. Can never change afterwards. |
 | `launch(name, config)` | anyone | Attach ≥ `get_launch_cost()` (the coin's code size plus room for state, about 2.5 NEAR), with 300 TGas. Creates `<name>.<factory>`; the caller becomes creator and keeper; extra NEAR seeds the treasury. Refunds if the launch fails. |
 | `store_guard_code()` | owner, once | The guard wasm as raw input. |
 | `connect(name, config)` | anyone | Attach ≥ `get_connect_cost()` (about 2.2 NEAR), with 300 TGas. `config.token_id` is the NEP-141 to guard. Reads its metadata, creates `<name>.<factory>` with no keys, registers it on the token, records it with `kind: "guard"`. Refunds if the token check or the deploy fails. |
-| `get_coins`, `get_coin_count`, `get_code_hash`, `get_guard_code_hash`, `get_launch_cost`, `get_connect_cost`, `get_owner` | view | |
+| `get_coins`, `get_coin_count`, `get_code_hash`, `get_guard_code_hash`, `get_launch_cost`, `get_connect_cost`, `get_owner`, `get_dao_suffixes` | view | |
 
 **Guard** (a connected coin)
 
 | Method | Who | Notes |
 | --- | --- | --- |
-| `ft_on_transfer` | the token | `msg: "lock"` from the living creator, or `msg: "stake"` from anyone else. Anything else is refunded. |
+| `storage_deposit()` | staker, once | 0.002 NEAR for the staker's entry. Required before the first stake. |
+| `ft_on_transfer` | the token | `msg: "lock"` from the living creator, or `msg: "stake"` from a registered staker. Anything else is refunded. |
 | `unstake(amount)` | staker | Attach 1 yoctoNEAR, 100 TGas. Rolled back if the token transfer fails. |
 | `pulse`, `claim_vested`, `fund_treasury`, `spend`, `set_links`, `start_takeover`, `vote`, `finalize_takeover` | as above | Same rules as a Revive coin; on revival the creator's bag is sealed, not burned. |
 | `get_status`, `get_stake`, `get_vote_weight`, `get_ballot`, `get_lore`, `get_lore_count` | view | `get_status` has `kind: "guard"`, `token_id`, `staked`, `stakers`. |
@@ -321,7 +335,9 @@ The site is published to GitHub Pages on every push.
 * **Hold-time is not identity.** A patient attacker can buy early and wait. Revive stops *buying a vote after the death*; it does not stop someone who planned ahead.
 * **Pools count but never vote.** Tokens in a liquidity pool held before the death count toward the eligible total, but a pool can't vote. That's why we recommend a 10% quorum (see [Picking the parameters](#picking-the-parameters)).
 * **Earlier testnet coins keep an older quorum count.** Coins from the first two factories (`revive-ztw7t`, `revive-bhtat`) count tokens bought after the death as slightly negative, which makes their quorum a little lenient. Our tests found it; coins from the current factory count exactly.
-* **Demo stewards.** The quick demo stories use a stand-in steward account instead of a Sputnik DAO, because a DAO costs about 5.6 testnet NEAR. The [$CIVIC](#revive) story uses a real Sputnik DAO, and coins launched from the app require `.sputnikv2.testnet` / `.sputnik-dao.near`.
+* **Demo stewards.** The quick demo stories use a stand-in steward account instead of a Sputnik DAO, because a DAO costs about 5.6 testnet NEAR. The [$CIVIC](#revive) story uses a real Sputnik DAO. The current factory only allows `.sputnikv2.testnet` stewards, fixed when it was made; the earlier factories took the suffix from the launch settings, so the Verify tab checks each coin's.
+* **Anyone can connect any token.** Connecting doesn't prove you made the token, and one token can have several guards. Holders should check the guard's creator on its Verify tab before staking.
+* **One takeover at a time.** A holder from before the death can still open a takeover nobody wants; it now costs a 0.1 NEAR bond that goes to the treasury when it fails.
 * **meme.cooking untested.** Connect works with any NEP-141 token and was tested on our own plain token; we haven't run it against a real meme.cooking token yet.
 * **Storage.** Each coin carries its own copy of the code, so a launch costs about 2.5 NEAR of storage. NEAR global contracts would cut that; they were left out to keep testnet costs predictable.
 * **Treasury transfers to accounts that don't exist** are refunded to the contract's balance, but not re-added to the `treasury` counter.
