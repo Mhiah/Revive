@@ -1,9 +1,10 @@
-import json,glob,sys
+import json,glob,sys,wave,numpy as np
 from faster_whisper import WhisperModel
 m=WhisperModel("medium.en",device="cpu",compute_type="int8")
 out={}
 for f in sorted(glob.glob("wav/*.wav")):
-    segs,_=m.transcribe(f,word_timestamps=True,vad_filter=False,condition_on_previous_text=False,
+    w_=wave.open(f); a=np.frombuffer(w_.readframes(w_.getnframes()),np.int16).astype(np.float32)/32768
+    segs,_=m.transcribe(a,word_timestamps=True,vad_filter=False,condition_on_previous_text=False,
         initial_prompt="Umm, uh, so, like, Revive, Revive, flatline, flatlined, Sputnik DAO, NEAR testnet, Civic Heart, Meme Cooked.")
     S=[]
     for s in segs:
