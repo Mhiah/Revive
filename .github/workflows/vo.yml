@@ -14,20 +14,20 @@ jobs:
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /tmp/r.key 2>/dev/null
           openssl pkey -in /tmp/r.key -pubout -out /tmp/r.pub
           git config user.name Mhiah; git config user.email 192190660+Mhiah@users.noreply.github.com
-          mkdir -p /tmp/k && cd /tmp/k && git init -q -b vo-key && cp /tmp/r.pub runner.pub && git add . && git -c user.name=Mhiah -c user.email=192190660+Mhiah@users.noreply.github.com commit -qm key
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" vo-key
+          mkdir -p /tmp/k && cd /tmp/k && git init -q -b vo-key-${{ github.run_id }} && cp /tmp/r.pub runner.pub && git add . && git -c user.name=Mhiah -c user.email=192190660+Mhiah@users.noreply.github.com commit -qm key
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" vo-key-${{ github.run_id }}
           cd $GITHUB_WORKSPACE
           for i in $(seq 1 120); do
-            if git fetch -q origin vo-in 2>/dev/null; then break; fi; sleep 10; done
-          git archive origin/vo-in | tar -x -C /tmp
+            if git fetch -q origin vo-in-${{ github.run_id }} 2>/dev/null; then break; fi; sleep 10; done
+          git archive origin/vo-in-${{ github.run_id }} | tar -x -C /tmp
           openssl pkeyutl -decrypt -inkey /tmp/r.key -in /tmp/k.enc -out /tmp/aes
           openssl enc -d -aes-256-cbc -pbkdf2 -pass file:/tmp/aes -in /tmp/audio.enc | tar -xz
       - run: python tx.py
       - name: return encrypted result
         run: |
           head -c 32 /dev/urandom | base64 > /tmp/aes2
-          mkdir -p /tmp/o && cd /tmp/o && git init -q -b vo-out
+          mkdir -p /tmp/o && cd /tmp/o && git init -q -b vo-out-${{ github.run_id }}
           openssl pkeyutl -encrypt -pubin -inkey $GITHUB_WORKSPACE/me.pub -in /tmp/aes2 -out k.enc
           openssl enc -aes-256-cbc -pbkdf2 -pass file:/tmp/aes2 -in $GITHUB_WORKSPACE/words.json -out words.enc
           git add . && git -c user.name=Mhiah -c user.email=192190660+Mhiah@users.noreply.github.com commit -qm out
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" vo-out
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" vo-out-${{ github.run_id }}
