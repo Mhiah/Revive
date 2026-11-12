@@ -49,6 +49,9 @@ export async function run(opts) {
     daoCodeFrom = { rpc: "https://test.rpc.fastnear.com", account: "clausehold-council.sputnikv2.testnet" },
     daoDeposit = "5.6",               // a Sputnik v2 DAO stores ~541 KB
     out = "demo-coins.json",
+    reuseDao,                         // an existing Sputnik DAO to keep $CIVIC instead of creating one
+    councilTag,                       // tag of the run whose alice and bob sit on that DAO's council
+    sweepTags = [],                   // earlier runs whose demo accounts send their spare NEAR back to the root
   } = opts;
 
   const provider = new JsonRpcProvider({ url: rpc });
@@ -81,7 +84,7 @@ export async function run(opts) {
   // Fund each account with what it needs: storage is 1 NEAR per 100 KB.
   const want = (x) => stories.includes(x);
   // "site" deploys and locks a factory with both codes for the app, and launches nothing.
-  const needCoin = want("coins") || want("dao") || want("alive") || want("site");
+  const needCoin = want("coins") || want("nine") || want("dao") || want("alive") || want("site");
   // A fresh factory for the site stores both codes, so it can launch and connect.
   const needGuard = want("guard") || ((want("alive") || want("site")) && !existingFactory);
   const size = async (f) => (await readFile(f)).length;
@@ -93,18 +96,28 @@ export async function run(opts) {
   const launchCost = (coinBytes + 10_000) * perByte;            // matches get_launch_cost
   const connectCost = (guardBytes + 10_000) * perByte + 0.0025;  // matches get_connect_cost
   const factoryFund = existingFactory ? 0 : (factoryBytes + coinBytes + guardBytes + 4_000) * perByte + 0.3;
-  const devFund = (want("coins") ? 2 * (launchCost + 0.1) + 0.2 : 0) + (want("guard") ? connectCost + 0.1 + 0.2 : 0)
+  const devFund = (want("coins") ? 2 * (launchCost + 0.1) + 0.2 : want("nine") ? launchCost + 0.1 + 0.2 : 0) + (want("guard") ? connectCost + 0.1 + 0.2 : 0)
     + (want("dao") ? launchCost + 0.2 + 0.2 : 0) + (want("alive") ? launchCost + 0.2 + 0.2 : 0) + 0.3;
-  const daoFund = want("dao") ? Number(daoDeposit) + (sputnikFactory ? 0 : 0.3) : 0;
+  const daoFund = want("dao") && !reuseDao ? Number(daoDeposit) + (sputnikFactory ? 0 : 0.3) : 0;
   const tokenFund = want("guard") ? (tokenBytes + 4_000) * perByte + 0.3 : 0;
   const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
   // In the DAO story alice proposes, which needs the DAO's 1 NEAR proposal bond (refunded when it passes).
-  const aliceNear = want("dao") ? r2(Number(holderNear) + 1.1) : holderNear;
+  const aliceNear = want("dao") && !reuseDao ? r2(Number(holderNear) + 1.1) : holderNear;
   const onlySite = stories.every((x) => x === "site");          // just the factory: no demo accounts
   const names = onlySite ? {} : { dev: r2(devFund), alice: aliceNear, bob: holderNear, carol: holderNear, whale: holderNear };
-  const standIn = !givenSteward && (want("coins") || want("guard"));
+  const standIn = !givenSteward && (want("coins") || want("nine") || want("guard"));
   const need = factoryFund + (onlySite ? 0 : devFund + tokenFund + daoFund + Number(aliceNear) + 3 * Number(holderNear)) + (standIn ? 0.35 : 0) + 0.3;
   log(`Stories: ${stories.join(", ")}. Wasm bytes: coin ${coinBytes}, guard ${guardBytes}, token ${tokenBytes}, factory ${factoryBytes}`);
+  // Give spare NEAR in earlier runs' throwaway accounts back to the root (the DAO council keeps its own).
+  for (const t of sweepTags) for (const r of ["dev", "alice", "bob", "carol", "whale", "stewards"]) {
+    if (t === councilTag && (r === "alice" || r === "bob")) continue;
+    const id = `${r}-${t}.${rootId}`;
+    if (!(await exists(id))) continue;
+    const a = new Account(id, provider, key.toString());
+    const st = await provider.query({ request_type: "view_account", finality: "final", account_id: id });
+    const spare = BigInt(st.amount) - BigInt(st.storage_usage) * 10n ** 19n - 5n * 10n ** 22n;
+    if (spare > 10n ** 22n) { await a.transfer({ receiverId: rootId, amount: spare.toString() }); log(`  swept ${Number(spare / 10n ** 21n) / 1000} NEAR from ${id}`); }
+  }
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
   if (resumeTag) log(`Resuming run ${tag}: accounts that already exist are reused`);
@@ -223,7 +236,7 @@ export async function run(opts) {
 
   const result = { factory: factoryId, code_hash: codeHash, guard_code_hash: guardHash, coins: [], steward,
     accounts: Object.fromEntries(Object.entries(acc).map(([k, v]) => [k, v.accountId])) };
-  if (want("coins")) {
+  if (want("coins") || want("nine")) {
   // ---------------------------------------------------- story 1: revival
   log("Story 1: $NINE dies and revives");
   const nine = await launch("nine", "NINE");
@@ -251,9 +264,11 @@ export async function run(opts) {
     log(`  steward ${steward} is a DAO: pulse it with a FunctionCall proposal (scripts/dao-pulse.md)`);
   }
 
+  let back;
+  if (want("coins")) {
   // --------------------------------------------------- story 2: comeback
   log("Story 2: $BACK's dev comes back mid-vote");
-  const back = await launch("back", "BACK");
+  back = await launch("back", "BACK");
   await waitPast(back, "flatline");
   await call(acc.alice, back, "start_takeover", { steward }, BOND);
   await call(acc.alice, back, "vote", { support: true }, POCKET);
@@ -263,10 +278,11 @@ export async function run(opts) {
   const s2 = await view(back, "get_status");
   check(s2.status === "alive" && !s2.takeover, "BACK alive again, takeover cancelled");
   check(BigInt(s2.treasury) - before === BigInt(nearToYocto("0.2")), "0.2 NEAR penalty went to the treasury");
+  }
 
   const lore = await view(nine, "get_lore", {});
   check(lore.some((l) => l.kind === "revived") && lore.some((l) => l.kind === "flatline"), "NINE's lore records the flatline and the revival");
-  result.coins.push(nine, back);
+  result.coins.push(nine, ...(back ? [back] : []));
   }
 
   if (want("guard")) {
@@ -357,9 +373,16 @@ export async function run(opts) {
   log("Story 4: $CIVIC is taken over by a real Sputnik DAO, which then pulses and spends by proposal");
   const daoName = `civic-${tag}`;
   let daoId, daoSuffix4;
-  const council = [acc.alice.accountId, acc.bob.accountId];
+  // The DAO's council: this run's alice and bob, or, for a reused DAO, the alice and bob who sit on it.
+  const cA = reuseDao ? as(`alice-${councilTag}.${rootId}`) : acc.alice;
+  const cB = reuseDao ? as(`bob-${councilTag}.${rootId}`) : acc.bob;
+  const council = [cA.accountId, cB.accountId];
   const daoArgs = { config: { name: daoName, purpose: "Keeper of $CIVIC after the community takeover", metadata: "" }, policy: council };
-  if (sputnikFactory) {
+  if (reuseDao) {
+    daoId = reuseDao;
+    daoSuffix4 = reuseDao.slice(reuseDao.indexOf("."));
+    log(`  reusing the Sputnik DAO ${daoId}`);
+  } else if (sputnikFactory) {
     daoId = `${daoName}.${sputnikFactory}`;
     daoSuffix4 = `.${sputnikFactory}`;
     if (!(resumeTag && await exists(daoId))) {
@@ -381,7 +404,7 @@ export async function run(opts) {
     await call(as(daoId), daoId, "new", daoArgs, "0", teraToGas("100"));
   }
   const policy = await view(daoId, "get_policy");
-  check(policy.roles.some((r) => JSON.stringify(r.kind).includes(acc.alice.accountId)), `real Sputnik DAO ${daoId} exists, council: alice and bob`);
+  check(policy.roles.some((r) => JSON.stringify(r.kind).includes(cA.accountId)), `real Sputnik DAO ${daoId} exists, council: ${council.join(" and ")}`);
 
   const civicName = existingFactory ? `civic-${tag}` : "civic";
   const civicId = `${civicName}.${factoryId}`;
@@ -409,8 +432,8 @@ export async function run(opts) {
     const want = BigInt(nearToYocto(min));
     if (bal < want) await root.transfer({ receiverId: a.accountId, amount: (want - bal).toString() });
   };
-  await topUp(acc.alice, "1.4");
-  await topUp(acc.bob, "0.5");
+  await topUp(cA, "1.4");
+  await topUp(cB, "0.5");
   check(await fails(call(acc.dev, civic, "pulse"), "keeper"), "the old dev can no longer pulse");
 
   // The DAO runs the coin: every action is a proposal its council votes on.
@@ -418,10 +441,10 @@ export async function run(opts) {
   async function daoDoes(description, method, args, gas, deposit = "0") {
     const kind = { FunctionCall: { receiver_id: civic, actions: [{
       method_name: method, args: Buffer.from(JSON.stringify(args)).toString("base64"), deposit, gas: teraToGas(gas).toString() }] } };
-    await call(acc.alice, daoId, "add_proposal", { proposal: { description, kind } }, bond, teraToGas("50"));
+    await call(cA, daoId, "add_proposal", { proposal: { description, kind } }, bond, teraToGas("50"));
     const id = (await view(daoId, "get_last_proposal_id")) - 1;
-    await call(acc.alice, daoId, "act_proposal", { id, action: "VoteApprove", proposal: kind }, "0", teraToGas("100"));
-    await call(acc.bob, daoId, "act_proposal", { id, action: "VoteApprove", proposal: kind }, "0", teraToGas("150"));
+    await call(cA, daoId, "act_proposal", { id, action: "VoteApprove", proposal: kind }, "0", teraToGas("100"));
+    await call(cB, daoId, "act_proposal", { id, action: "VoteApprove", proposal: kind }, "0", teraToGas("150"));
     return (await view(daoId, "get_proposal", { id })).status;
   }
   const s4 = await view(civic, "get_status");
@@ -441,7 +464,7 @@ export async function run(opts) {
     { receiver_id: acc.carol.accountId, amount: nearToYocto("0.05").toString(), memo: "community bounty, approved by DAO vote" }, "50");
   const carolAfter = BigInt((await new Account(acc.carol.accountId, provider).getBalance()));
   check(st2 === "Approved" && carolAfter - carolBefore === BigInt(nearToYocto("0.05")), "DAO proposal approved: carol was paid 0.05 NEAR from the coin's treasury");
-  check(await fails(call(acc.alice, civic, "spend", { receiver_id: acc.alice.accountId, amount: "1", memo: "x" }), "keeper"),
+  check(await fails(call(cA, civic, "spend", { receiver_id: cA.accountId, amount: "1", memo: "x" }), "keeper"),
     "a council member alone cannot spend: only the DAO, by vote");
   result.coins.push(civic);
   result.dao = daoId;
@@ -500,6 +523,9 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     stories: (process.env.STORIES || "coins,guard").split(",").map((x) => x.trim()).filter(Boolean),
     holderNear: process.env.HOLDER_NEAR || "0.15",
     existingFactory: process.env.FACTORY || undefined,
+    reuseDao: process.env.REUSE_DAO || undefined,
+    councilTag: process.env.COUNCIL_TAG || undefined,
+    sweepTags: (process.env.SWEEP_TAGS || "").split(",").map((x) => x.trim()).filter(Boolean),
     resumeTag: process.env.RESUME_TAG || undefined,
     sputnikFactory: process.env.SPUTNIK_FACTORY || undefined,
     out: process.env.OUT || "demo-coins.json",

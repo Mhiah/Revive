@@ -17,10 +17,19 @@ on:
         description: "Pulse interval and vote length in seconds (min 60)"
         default: "60"
       stories:
-        description: "coins = $NINE and $BACK, guard = connect an outside $MEME token, dao = a real Sputnik DAO takes over $CIVIC, alive = $HERE with a 3-day heartbeat, site = only deploy and lock a factory for the app"
+        description: "coins = $NINE and $BACK, nine = $NINE only, guard = connect an outside $MEME token, dao = a real Sputnik DAO takes over $CIVIC, alive = $HERE with a 3-day heartbeat, site = only deploy and lock a factory for the app"
         default: "guard"
       factory:
         description: "Reuse an existing locked factory (optional), e.g. revive-bhtat.revive.testnet"
+        required: false
+      reuse_dao:
+        description: "Keep $CIVIC with this existing Sputnik DAO instead of creating one (optional), with council_tag"
+        required: false
+      council_tag:
+        description: "Tag of the run whose alice and bob sit on that DAO's council (optional), e.g. vft8z"
+        required: false
+      sweep:
+        description: "Tags of earlier runs whose demo accounts return their spare NEAR first (optional), e.g. 6tx39,ztw7t"
         required: false
       resume:
         description: "Tag of a stopped run to continue (optional), e.g. cia7y"
@@ -78,6 +87,9 @@ jobs:
           STORIES: ${{ inputs.stories }}
           FACTORY: ${{ inputs.factory }}
           RESUME_TAG: ${{ inputs.resume }}
+          REUSE_DAO: ${{ inputs.reuse_dao }}
+          COUNCIL_TAG: ${{ inputs.council_tag }}
+          SWEEP_TAGS: ${{ inputs.sweep }}
           SPUTNIK_FACTORY: sputnikv2.testnet
         run: |
           cd scripts && npm install --no-audit --no-fund && cd ..
