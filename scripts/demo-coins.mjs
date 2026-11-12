@@ -132,7 +132,7 @@ export async function run(opts) {
   for (const [n, amt] of Object.entries(names)) {
     if (!(resumeTag && await exists(sub(n)))) await root.createSubAccount({ accountOrPrefix: `${n}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(amt) });
     acc[n] = as(sub(n));
-    if (resumeTag) {   // a resumed run tops accounts back up to what this run gives them
+    if (resumeTag && n !== "dev") {   // a resumed run tops holders back up (the dev has already spent on launches)
       const bal = BigInt(await acc[n].getBalance()), want_ = BigInt(nearToYocto(amt));
       if (bal < want_) await root.transfer({ receiverId: acc[n].accountId, amount: (want_ - bal).toString() });
     }
