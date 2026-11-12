@@ -31,6 +31,9 @@ on:
       sweep:
         description: "Tags of earlier runs whose demo accounts return their spare NEAR first (optional), e.g. 6tx39,ztw7t"
         required: false
+      holder_near:
+        description: "NEAR given to each demo holder (default 0.15)"
+        required: false
       resume:
         description: "Tag of a stopped run to continue (optional), e.g. cia7y"
         required: false
@@ -90,6 +93,7 @@ jobs:
           REUSE_DAO: ${{ inputs.reuse_dao }}
           COUNCIL_TAG: ${{ inputs.council_tag }}
           SWEEP_TAGS: ${{ inputs.sweep }}
+          HOLDER_NEAR: ${{ inputs.holder_near || '0.15' }}
           SPUTNIK_FACTORY: sputnikv2.testnet
         run: |
           cd scripts && npm install --no-audit --no-fund && cd ..

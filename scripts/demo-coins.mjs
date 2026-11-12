@@ -106,10 +106,10 @@ export async function run(opts) {
   const onlySite = stories.every((x) => x === "site");          // just the factory: no demo accounts
   const names = onlySite ? {} : { dev: r2(devFund), alice: aliceNear, bob: holderNear, carol: holderNear, whale: holderNear };
   const standIn = !givenSteward && (want("coins") || want("nine") || want("guard"));
-  const need = factoryFund + (onlySite ? 0 : devFund + tokenFund + daoFund + Number(aliceNear) + 3 * Number(holderNear)) + (standIn ? 0.35 : 0) + 0.3;
+  const need = factoryFund + (onlySite ? 0 : devFund + tokenFund + daoFund + Number(aliceNear) + 3 * Number(holderNear)) + (standIn ? 0.35 : 0) + 0.1;
   log(`Stories: ${stories.join(", ")}. Wasm bytes: coin ${coinBytes}, guard ${guardBytes}, token ${tokenBytes}, factory ${factoryBytes}`);
   // Give spare NEAR in earlier runs' throwaway accounts back to the root (the DAO council keeps its own).
-  for (const t of sweepTags) for (const r of ["dev", "alice", "bob", "carol", "whale", "stewards"]) {
+  for (const t of sweepTags) for (const r of ["dev", "alice", "bob", "carol", "whale", "stewards", "meme"]) {
     if (t === councilTag && (r === "alice" || r === "bob")) continue;
     const id = `${r}-${t}.${rootId}`;
     if (!(await exists(id))) continue;
