@@ -102,7 +102,8 @@ export async function run(opts) {
   const tokenFund = want("guard") ? (tokenBytes + 4_000) * perByte + 0.3 : 0;
   const r2 = (x) => (Math.ceil(x * 100) / 100).toFixed(2);
   // In the DAO story alice proposes, which needs the DAO's 1 NEAR proposal bond (refunded when it passes).
-  const aliceNear = want("dao") && !reuseDao ? r2(Number(holderNear) + 1.1) : holderNear;
+  // alice opens takeovers (0.11 NEAR bond, refunded) and, for a new DAO, proposes (1 NEAR bond, refunded).
+  const aliceNear = r2(Number(holderNear) + 0.15 + (want("dao") && !reuseDao ? 1.1 : 0));
   const onlySite = stories.every((x) => x === "site");          // just the factory: no demo accounts
   const names = onlySite ? {} : { dev: r2(devFund), alice: aliceNear, bob: holderNear, carol: holderNear, whale: holderNear };
   const standIn = !givenSteward && (want("coins") || want("nine") || want("guard"));
@@ -131,6 +132,10 @@ export async function run(opts) {
   for (const [n, amt] of Object.entries(names)) {
     if (!(resumeTag && await exists(sub(n)))) await root.createSubAccount({ accountOrPrefix: `${n}-${tag}`, publicKey: pub, nearToTransfer: nearToYocto(amt) });
     acc[n] = as(sub(n));
+    if (resumeTag) {   // a resumed run tops accounts back up to what this run gives them
+      const bal = BigInt(await acc[n].getBalance()), want_ = BigInt(nearToYocto(amt));
+      if (bal < want_) await root.transfer({ receiverId: acc[n].accountId, amount: (want_ - bal).toString() });
+    }
   }
 
   let steward = givenSteward;
@@ -241,11 +246,15 @@ export async function run(opts) {
   if (want("coins") || want("nine")) {
   // ---------------------------------------------------- story 1: revival
   log("Story 1: $NINE dies and revives");
-  const nine = await launch("nine", "NINE");
+  const nineId = `nine.${factoryId}`;
+  const nineResumed = resumeTag && await exists(nineId);
+  const nine = nineResumed ? nineId : await launch("nine", "NINE");
+  if (nineResumed) log(`  resuming: ${nine} already launched`);
   log("  dev goes silent");
   await waitPast(nine, "flatline");
   check((await view(nine, "get_status")).status === "flatlined", "NINE flatlined");
-  await call(acc.dev, nine, "ft_transfer", { receiver_id: acc.whale.accountId, amount: tokens(250_000_000) }, "1");
+  if ((await view(nine, "ft_balance_of", { account_id: acc.whale.accountId })) === "0")
+    await call(acc.dev, nine, "ft_transfer", { receiver_id: acc.whale.accountId, amount: tokens(250_000_000) }, "1");
   check((await view(nine, "get_vote_weight", { account_id: acc.whale.accountId })) === "0", "whale bought 250M after the death: weight 0");
   await call(acc.alice, nine, "start_takeover", { steward }, BOND);
   check((await view(nine, "get_status")).status === "voting", `takeover opened for ${steward}`);
