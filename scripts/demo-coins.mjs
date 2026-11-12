@@ -116,7 +116,9 @@ export async function run(opts) {
     const a = new Account(id, provider, key.toString());
     const st = await provider.query({ request_type: "view_account", finality: "final", account_id: id });
     const spare = BigInt(st.amount) - BigInt(st.storage_usage) * 10n ** 19n - 5n * 10n ** 22n;
-    if (spare > 10n ** 22n) { await a.transfer({ receiverId: rootId, amount: spare.toString() }); log(`  swept ${Number(spare / 10n ** 21n) / 1000} NEAR from ${id}`); }
+    if (spare <= 10n ** 22n) continue;
+    try { await a.transfer({ receiverId: rootId, amount: spare.toString() }); log(`  swept ${Number(spare / 10n ** 21n) / 1000} NEAR from ${id}`); }
+    catch (e) { log(`  skipped ${id}: ${String(e.message || e).split("\n")[0].slice(0, 80)}`); }
   }
   const have = Number(BigInt(await root.getBalance()) / 10n ** 21n) / 1000;
   log(`Root ${rootId} has ${have} NEAR; this run needs about ${r2(need)} NEAR`);
