@@ -56,7 +56,7 @@ needed.
 **Checked and found safe** (evidence in D):
 
 - Script injection through coin names, symbols, links, icons, history notes, DAO suffixes and token
-  metadata: 9 browser checks, and no payload ran.
+  metadata: 8 browser checks, and no payload ran.
 - Keeper-only `pulse`, `spend` and `set_links`; the spend cap; storage cannot be spent; only the
   creator claims vested tokens. Covered by unit tests.
 - No double votes; tokens bought after the death get no vote; splitting or hopping wallets adds no
