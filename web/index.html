@@ -1524,7 +1524,7 @@ async function verifyPanel(src, S) {
     ${item(v.keys === 0, v.keys === 0 ? "The coin has no access keys" : `The coin has ${v.keys} access key(s)`,
       "Nobody can sign transactions as this coin or replace its code. Only its rules can move its tokens and treasury.")}
     ${item(matches, matches ? (!official ? `Same code as the other ${guard ? "guards" : "coins"} from its factory` : guard ? "Same code as every Revive guard" : "Same code as every Revive coin") : "Code hash does not match the factory",
-      `${guard ? "Guard" : "Coin"} code hash <b>${esc(v.code_hash)}</b><br>Factory code hash <b>${esc(v.factory_code_hash || "—")}</b><br>SHA-256 hex ${esc(b58ToHex(v.code_hash))} — compare with the hash printed by <a href="${REPO}/actions" target="_blank" rel="noopener">CI</a>.`)}
+      `${guard ? "Guard" : "Coin"} code hash <b>${esc(v.code_hash)}</b><br>Factory code hash <b>${esc(v.factory_code_hash || "—")}</b><br>SHA-256 hex ${esc(b58ToHex(v.code_hash))}. This proves every ${guard ? "guard" : "coin"} from the factory runs the same code. The build isn't byte-for-byte reproducible yet, so this hash can't be matched to the <a href="${REPO}" target="_blank" rel="noopener">source code</a> on its own.`)}
     ${item(v.factory_keys === 0 ? true : v.factory_keys === null ? null : false, v.factory_keys === 0 ? "The factory is locked" : "The factory still has keys",
       `${esc(v.factory)} ${v.factory_keys === 0 ? "has no keys, so nobody can change how coins are made." : `has ${v.factory_keys ?? "?"} key(s).`}`)}
     ${item(solvent, solvent ? "The treasury is fully backed" : "Treasury exceeds the coin's balance",
