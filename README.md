@@ -47,15 +47,17 @@ Open **Nine Lives** and click the story buttons in order.
 | Do this | You should see |
 | --- | --- |
 | Open [mhiah.github.io/Revive](https://mhiah.github.io/Revive/) | **Flatline Watch** read live from NEAR testnet: `$HERE` alive, the revived `$NINE` and `$CIVIC`, `$BACK`, and the connected `$MEME` (tagged *connected*), each with its pulse, shelf life and trend |
-| Click **Nine Lives** → **Verify** | Six checks from RPC: no access keys on the coin, its code hash equals the factory's, the factory has no keys, treasury backed, supply adds up (100M burned), and who the keeper is |
+| Click **Nine Lives** → **Verify** | Checks read from RPC: made by an official Revive factory (pinned in the app), no access keys on the coin, its code hash equals the factory's, the factory has no keys, treasury backed, supply adds up (100M burned), settings can't switch the takeover off, and the keeper is a Sputnik DAO |
 | Click **Lore** | The coin's on-chain history: born, flatline, takeover, revived |
 | Click **Activity** | Token transfers over time, every pulse and vote marked, flatlined stretches shaded red |
 | In the simulator, open **Meme Cooked** (tagged *connected*) | A token launched elsewhere: stake, skip time, let the whale buy and stake after the death (no vote), take it over, then **Verify** shows the guard holds every staked and sealed token |
 | Open [mhiah.github.io/Revive/?demo](https://mhiah.github.io/Revive/?demo) → **Nine Lives**, click steps 1–11 | The full story with no wallet: a whale's post-death vote is refused, the coin revives, the DAO pulses |
-| `cd contract && cargo test` | `88 passed` (plus `guard`: `44 passed`, `factory`: `30 passed`): [what each group proves](#tests) |
+| `cd contract && cargo test` | `90 passed` (plus `guard`: `44 passed`, `factory`: `30 passed`): [what each group proves](#tests) |
+| `python tests/browser/site_test.py` | `28 passed, 0 failed`: the site in Chrome against a fake NEAR node serving a hostile coin ([details](#tests)) |
 | `cd contract && cargo run --example simulate` | The [60-day simulation](#60-day-simulation): six scenarios' day-60 results printed; `docs/simulation.json` rewritten |
 | Latest [CI run](https://github.com/Mhiah/Revive/actions/workflows/contract.yml) → **sandbox-e2e** | All five stories on a local NEAR node, including connecting an outside token and a takeover by a real Sputnik DAO, every step checked (`All checks passed`) |
 | [testnet-demo run](https://github.com/Mhiah/Revive/actions/workflows/testnet-demo.yml) | The same stories on NEAR testnet, against the coins above |
+| Read [docs/AUDIT.md](docs/AUDIT.md) | The internal security and functionality audit: every finding, what was fixed, what is still open, and the test evidence |
 
 ## Why
 
@@ -325,6 +327,67 @@ The site is published to GitHub Pages on every push.
 | `unstake(amount)` | staker | Attach 1 yoctoNEAR, 100 TGas. Rolled back if the token transfer fails. |
 | `pulse`, `claim_vested`, `fund_treasury`, `spend`, `set_links`, `start_takeover`, `vote`, `finalize_takeover` | as above | Same rules as a Revive coin; on revival the creator's bag is sealed, not burned. |
 | `get_status`, `get_stake`, `get_vote_weight`, `get_ballot`, `get_lore`, `get_lore_count` | view | `get_status` has `kind: "guard"`, `token_id`, `staked`, `stakers`. |
+
+## Security audit (November 2026)
+
+We audited Revive ourselves before submitting: the three contracts, the web app, the scripts, the CI
+workflows, and the factories and coins live on testnet. This is an **internal** audit, not an independent
+one. The full report, with the evidence for every finding, is [docs/AUDIT.md](docs/AUDIT.md).
+
+**What we ran, and what came back:**
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Contract unit tests | `cargo test` in `contract`, `guard`, `factory` | 164 passed, 0 failed (90 + 44 + 30) |
+| Lints | `cargo clippy --all-targets -- -D warnings` in each crate | clean |
+| The site in Chrome, against a hostile coin | `python tests/browser/site_test.py` | 28 passed, 0 failed |
+| All five stories on a local NEAR node | CI job `sandbox-e2e` | all checks passed |
+| 60-day simulation | `cargo run --example simulate` | runs; output byte for byte the same as the published `docs/simulation.json` |
+| The live chain | read every factory and listed coin over RPC | all 4 factories and all 11 coins and guards have no access keys; every coin's code hash equals its factory's |
+| Leaked keys | scan of every commit in the git history | none |
+| JavaScript dependencies | `npm audit` in `scripts` | 0 vulnerabilities (after the fix below) |
+| Rust dependencies | `cargo audit` in each crate | 1 advisory and 2 "unmaintained" warnings; none affects the deployed wasm except near-sdk's unmaintained allocator (see below) |
+
+**What held up.** Nothing we found lets anyone move a coin's tokens or treasury against its rules. Only the keeper
+can pulse, spend or change links. Only holders from before the death vote, once each. The creator's own account
+never votes. Callbacks are private. Code is stored once and only by the owner. Script payloads in a coin's name,
+symbol, links, icon, history and token metadata never ran in the browser.
+
+**What we fixed:**
+
+| Severity | Finding | Fix |
+| --- | --- | --- |
+| High | The Verify tab compared a coin only with its own factory, so a copycat factory's coins passed every check | The app pins Revive's four factories and their code hashes; anything else is labelled **Not an official Revive coin** |
+| Medium | A link with `?factory=` or `?connect=` could point Launch and Connect at another contract, with no warning | Launch and Connect warn when the factory isn't Revive's |
+| Medium | A connected token's page didn't show how much the guard actually protects | Verify shows the share of supply the guard covers, whether the token's team still holds keys, and who connected it |
+| Low | During an RPC outage the list said "Loading coins…" forever | After three failed tries it says NEAR can't be reached and keeps retrying |
+| Low | No security headers on the hosted site | `web/vercel.json` blocks framing and MIME sniffing |
+| Low | CI workflows used the repository's default token permissions | Every workflow now gets a read-only token |
+| Low | A CI-only dependency (`tar`, through `near-sandbox`) had known denial-of-service advisories | Pinned to the patched version |
+| Info | Verify said to compare the code hash with CI's, which can't match while the build isn't reproducible | Verify now says what the hash proves, and what it doesn't |
+
+**What is still open**, and why:
+
+| Severity | Finding | Status |
+| --- | --- | --- |
+| High (design) | **A creator's second wallet can outvote holders.** Weight belongs to accounts; a creator who moves tokens to another wallet long before the death keeps that wallet's weight. The test `a_creator_with_a_second_wallet_can_outvote_the_holders` shows 500M beating 300M of honest votes | No code fix without identity. The transfers are public and the Activity tab shows them |
+| High | **One empty slot on an earlier factory.** `revive-bhtat` stored guard code but never coin code, so its owner account could still store coin code there once | The app expects no coins from it and fails any that appear. Closing the slot for good takes one testnet transaction by the owner |
+| Medium | **The build isn't reproducible.** In CI the coin builds to a different hash (`CR5qCUDA…`) from the deployed one (`6Unt3cdM…`), so nobody can confirm the deployed coins run exactly this source | Needs `cargo near build reproducible-wasm` and a new factory from that build |
+| Medium | **The wallet library loads from esm.sh** without an integrity hash | Bundle it into the repo before any mainnet use |
+| Medium | **A guard trusts its token.** A token whose team still holds keys can be upgraded, mint more, or report transfers it never made; anyone can connect any token | By design; Verify now shows the token's keys and the guard's coverage |
+| Low | Treasury transfers to accounts that don't exist bounce back to the contract but not to the `treasury` counter | Fix in the next contract version |
+| Low | One takeover at a time: a griefer can hold the slot for one vote | Costs them the 0.1 NEAR bond if it fails |
+| Info | `revive.testnet`, which owns the factories, has a full-access key in GitHub secrets for the demo and keep-alive workflows | Testnet only; for mainnet, a separate keeper with a key limited to `pulse` |
+| Info | near-sdk's allocator (`wee_alloc`) is flagged unmaintained; two other advisories are only in the local test runtime, not the wasm | Every NEAR call starts with fresh memory, so the allocator's known leak can't build up |
+| Info | Icons from connected tokens can load from other websites, which then see visitors' IP addresses | Coins launched on Revive store their icon on-chain |
+
+**Not tested in this audit:** signing with a real wallet on the live site (needs a person and a wallet), and the
+connected-token story on the current factory (about 2 testnet NEAR short; it passed on the earlier factory and on the
+local sandbox).
+
+**Verdict:** as a **testnet demonstration**, everything we tested works. For **real money on mainnet**, Revive is
+**not ready**: the open High findings need decisions, the build needs to be reproducible, and it needs an independent
+audit.
 
 ## Limits (honest list)
 
