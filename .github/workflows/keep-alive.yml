@@ -8,6 +8,9 @@ on:
     - cron: "41 5,17 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   pulse:
     runs-on: ubuntu-latest

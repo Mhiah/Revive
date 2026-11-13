@@ -231,6 +231,9 @@
   a:hover { color: var(--color-primary-hover); }
   .tag { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: var(--color-primary-hover) !important;
     background: var(--color-blue-light); border-radius: 4px; padding: 2px 6px; margin-left: 8px; vertical-align: 2px; }
+  .tag.old { color: var(--dim) !important; background: var(--line); }
+  .warn { border-left: 3px solid var(--dead); }
+  .warn b { color: var(--dead); }
   .addr { font-family: var(--font-mono); font-size: 12px; color: var(--dim); word-break: break-all; min-height: 1em; }
   .tokencard { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: var(--color-background-secondary); }
 
@@ -277,6 +280,22 @@ const DEFAULT_CONNECT = "revive-5svgh.revive.testnet";
 // Earlier factories: their coins are still listed (they run the version before the quorum fixes).
 const EARLIER_FACTORIES = ["revive-6tx39.revive.testnet", "revive-ztw7t.revive.testnet", "revive-bhtat.revive.testnet"];
 const FACTORY_ID = params.get("factory") || DEFAULT_FACTORY;
+// Every factory Revive has deployed, with the code hash of the coins and guards it makes,
+// read from NEAR and pinned here. All of them are keyless, so these can't change. One slot
+// is empty: revive-bhtat never stored coin code, and its owner could still fill it once, so
+// no coin from it is expected and any that appears fails the check below.
+const OFFICIAL = NETWORK !== "testnet" ? {} : {
+  "revive-5svgh.revive.testnet": { coin: "6Unt3cdMzSNsXSSwveYTaqTfTazFq6UL3sriKbJg1kRi", guard: "Au6wxAAPsAN6UXSWYJducNQnwb1i6LtVfs66HfbqzEiV" },
+  "revive-6tx39.revive.testnet": { coin: "4sPKvvchGUbYwMRBdwNxbXULQfbRGRbo2Ze7rHb1YTCC", guard: "3SXa979knJPsou9NrCuzYtJrbpBPwmrDBdQf45xTi2gA" },
+  "revive-ztw7t.revive.testnet": { coin: "EkTFq6NmqpRaAUmcHo7kPi9o1AP5tZjuZsSpP3EB8RGT", guard: null },
+  "revive-bhtat.revive.testnet": { coin: null, guard: "H8Sh8CcSrrMFAcUeWziyYKktqVwAQE6vF6sCAjYetXji" },
+};
+// The code hash Revive expects for a coin or guard: undefined if its factory isn't Revive's,
+// null if that factory isn't meant to make that kind.
+const pinnedHash = (id, guard) => OFFICIAL[factoryOf(id)]?.[guard ? "guard" : "coin"];
+const isOfficialFactory = (f) => DEMO || !!OFFICIAL[f];
+const factoryWarn = (f) => isOfficialFactory(f) ? "" :
+  `<p class="hint warn" style="padding-left:10px"><b>Not an official Revive factory.</b> This page was opened with a link that points at ${esc(f)}, which Revive didn't deploy. Anything you send goes to that account. If you didn't mean to, open <a href="./">the official site</a> instead.</p>`;
 const CONNECT_FACTORY = params.get("connect") || DEFAULT_CONNECT;
 const FACTORIES = [...new Set([FACTORY_ID, CONNECT_FACTORY, ...(params.has("factory") ? [] : EARLIER_FACTORIES)].filter(Boolean))];
 // Left off Flatline Watch: a second Civic Heart from a run that stopped before its DAO acted
@@ -570,8 +589,9 @@ function liveCoin(id) {
       const [suffixes, registered] = await Promise.all([
         view(parent, "get_dao_suffixes").catch(() => null),
         guard ? view(token, "storage_balance_of", { account_id: id }).catch(() => null) : Promise.resolve(null)]);
+      const token_keys = guard ? await viewKeys(token).then((k) => k.length).catch(() => null) : null;
       return { code_hash: acc.code_hash, balance: acc.amount, keys: keys.length, meta, supply, factory: parent, factory_code_hash: factoryHash,
-        factory_keys: factoryKeys?.length ?? null, held, suffixes, registered };
+        factory_keys: factoryKeys?.length ?? null, held, suffixes, registered, token_keys };
     },
   };
 }
@@ -775,7 +795,7 @@ class GuardMock extends Mock {
   async verify(S) {
     return { code_hash: FAKE_HASH, balance: (this.treasury + 15n * YOCTO_NEAR / 10n).toString(), keys: 0, supply: T(1e9).toString(),
       meta: { spec: "ft-1.0.0", decimals: 18, name: this.cfg.name, symbol: this.cfg.symbol }, factory: "revive.testnet", factory_code_hash: FAKE_HASH, factory_keys: 0,
-      held: (BigInt(S.staked) + BigInt(S.dev_locked) + BigInt(S.dev_burned)).toString() };
+      held: (BigInt(S.staked) + BigInt(S.dev_locked) + BigInt(S.dev_burned)).toString(), token_keys: 0 };
   }
 }
 
@@ -883,16 +903,21 @@ const heroHtml = () => `
       </div>
     </section>`;
 let WATCH_LAST = null;                            // last list that loaded, shown if a refresh fails
+// Coins from a factory before the current one keep the code they were born with.
+const oldTag = (id) => !DEMO && OFFICIAL[factoryOf(id)] && factoryOf(id) !== DEFAULT_FACTORY
+  ? `<small class="tag old" title="Made by an earlier Revive factory, before the latest fixes. Its rules can't change.">earlier version</small>` : "";
+let WATCH_FAILS = 0;
 async function watchView() {
   setAccent("alive");
   let coins;
-  try { coins = await REG.coins(); }
+  try { coins = await REG.coins(); WATCH_FAILS = 0; }
   catch (e) {
+    WATCH_FAILS++;
     if (WATCH_LAST) coins = WATCH_LAST;
     else {
       // Nothing loaded yet: keep trying quietly until NEAR answers.
       setTimeout(() => { if (route().page === "watch") render(); }, 2000);
-      return `${heroHtml()}<section class="panel full">${ph("Flatline Watch")}<div class="empty">Loading coins…</div></section>`;
+      return `${heroHtml()}<section class="panel full">${ph("Flatline Watch")}<div class="empty">${WATCH_FAILS >= 3 ? "Can't reach NEAR right now. Still trying…" : "Loading coins…"}</div></section>`;
     }
   }
   WATCH_LAST = coins;
@@ -926,7 +951,7 @@ async function watchView() {
     const livesNote = s.lives ? `${s.lives} ${s.lives === 1 ? "life" : "lives"} restored` : "never revived";
     return `<a class="coinrow" href="#/coin/${encodeURIComponent(c.account_id)}" style="--c:var(${COLORS[s.status]})">
       <span class="dot ${s.status === "alive" ? "beat" : ""}"></span>
-      <span class="nm">${iconHtml(s.icon, s.config.symbol)}<span><b>${esc(s.config.name)}</b><small>$${esc(s.config.symbol)}</small>${s.kind === "guard" ? `<small class="tag">connected</small>` : ""}</span></span>
+      <span class="nm">${iconHtml(s.icon, s.config.symbol)}<span><b>${esc(s.config.name)}</b><small>$${esc(s.config.symbol)}</small>${s.kind === "guard" ? `<small class="tag">connected</small>` : ""}${oldTag(c.account_id)}</span></span>
       <span class="hide-sm"><span class="chip">${LABEL[s.status]}</span></span>
       <span class="shelf">${esc(shelf)}<span class="bar"><i style="width:${(barFrac * 100).toFixed(1)}%"></i></span></span>
       <span class="trend" style="--t:var(${col})" title="${word} · ${livesNote}"><b>${tri}</b><span class="hide-sm">${word}</span></span></a>`;
@@ -955,7 +980,7 @@ async function launchView() {
   if (!DEMO && FACTORY_ID) LAUNCH_COST = BigInt(await view(FACTORY_ID, "get_launch_cost"));
   return `
     <section class="panel full">
-      ${ph("Launch a coin", `Your coin gets the same code as every Revive coin.
+      ${factoryWarn(FACTORY_ID)}${ph("Launch a coin", `Your coin gets the same code as every Revive coin.
         You become the creator and first keeper. Your share (up to 10%) stays locked and vests only while you keep pulsing.
         Launching costs ${fmtNear(LAUNCH_COST)} for storage; anything you add on top goes to the treasury.`)}
       <form id="launch" class="stack">
@@ -1020,7 +1045,7 @@ async function connectView() {
   const sym = t ? esc(t.meta.symbol) : "TOKEN";
   return `
     <section class="panel full">
-      ${ph("Connect a coin", `For a token launched outside Revive: meme.cooking, another launchpad or your own contract. The token itself doesn't change.
+      ${factoryWarn(CONNECT_FACTORY)}${ph("Connect a coin", `For a token launched outside Revive: meme.cooking, another launchpad or your own contract. The token itself doesn't change.
         Revive sets up a guard next to it. You lock your tokens there and holders stake there.
         The same rules apply, and if holders take over, your locked tokens stay sealed in the guard for good.`)}
       <div class="stack">
@@ -1214,13 +1239,17 @@ async function coinView(r) {
   const dead = S.now > S.flatline_at;
   const tabs = ["monitor", "activity", "verify", "lore"].map((t) =>
     `<a href="#/coin/${encodeURIComponent(r.id)}/${t}" class="${r.tab === t ? "on" : ""}">${t[0].toUpperCase() + t.slice(1)}</a>`).join("");
-  const head = `
+  const pin = pinnedHash(r.id, guard);
+  const notOfficial = !DEMO && !pin ? `<section class="panel full warn"><p class="hint" style="margin:0"><b>Not an official Revive ${guard ? "guard" : "coin"}.</b>
+    ${pin === undefined ? `${esc(factoryOf(r.id))} isn't one of Revive's factories, so nothing on this page is vouched for by Revive.` : `${esc(factoryOf(r.id))} is a Revive factory, but it was never meant to make ${guard ? "guards" : "coins"}.`}
+    Its Verify checks only compare it with itself.</p></section>` : "";
+  const head = notOfficial + `
     <section class="panel full monitor">
       <div class="flash" id="flash"></div>
       <div class="monitor-top">
         <div class="coinid">${iconHtml(S.icon, S.config.symbol, true)}<div><div class="label">Coin · <a href="${EXPLORER}/address/${esc(r.id)}" target="_blank" rel="noopener">${esc(short(r.id))}</a>${guard
             ? ` · token <a href="${EXPLORER}/token/${esc(S.token_id)}" target="_blank" rel="noopener">${esc(short(S.token_id))}</a>` : ""}</div>
-          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small>${guard ? `<small class="tag">connected</small>` : ""}</div>${S.links === REPO ? "" : linksHtml(S.links)}</div></div>
+          <div class="coin">${esc(S.config.name)}<small>$${esc(S.config.symbol)}</small>${guard ? `<small class="tag">connected</small>` : ""}${oldTag(r.id)}</div>${S.links === REPO ? "" : linksHtml(S.links)}</div></div>
         <div style="text-align:right"><div class="label">Status</div>
           <div class="status ${S.status === "flatlined" ? "blink" : ""}">${LABEL[S.status]}</div></div>
       </div>
@@ -1482,10 +1511,19 @@ async function verifyPanel(src, S) {
   const keeperDao = isDao(S.keeper, S) && S.keeper !== S.creator;
   const item = (ok, title, detail) => `<div class="check"><span class="i" style="color:var(${ok === null ? "--vote" : ok ? "--alive" : "--dead"})">${ok === null ? "!" : ok ? "✓" : "✗"}</span>
     <div><b>${title}</b><div class="d">${detail}</div></div></div>`;
+  const pin = DEMO ? v.code_hash : pinnedHash(src.id, guard);
+  const official = DEMO || (!!pin && v.code_hash === pin);
+  const covered = guard ? BigInt(S.staked) + BigInt(S.dev_locked) + BigInt(S.dev_burned) : 0n;
+  const pct = guard && BigInt(v.supply) > 0n ? Number(covered * 10000n / BigInt(v.supply)) / 100 : 0;
   return `<section class="panel full">${ph("Verify", DEMO ? "Checks read from the simulator." : "Checks read live from NEAR. Nothing here needs to be taken on trust.")}
+    ${item(official, official ? "Made by an official Revive factory" : `Not made by an official Revive factory`,
+      official ? `${esc(v.factory)} is one of Revive's own factories, and this ${guard ? "guard" : "coin"}'s code hash matches the one the app pins for it.`
+        : pin === undefined ? `${esc(v.factory)} isn't one of Revive's factories. The checks below only compare this ${guard ? "guard" : "coin"} with its own factory, so they prove nothing about Revive's rules.`
+        : !pin ? `${esc(v.factory)} was never meant to make ${guard ? "guards" : "coins"}, so this one can't be checked against known code.`
+        : `Its code hash ${esc(v.code_hash)} isn't the one pinned for ${esc(v.factory)} (${esc(pin)}).`)}
     ${item(v.keys === 0, v.keys === 0 ? "The coin has no access keys" : `The coin has ${v.keys} access key(s)`,
       "Nobody can sign transactions as this coin or replace its code. Only its rules can move its tokens and treasury.")}
-    ${item(matches, matches ? (guard ? "Same code as every Revive guard" : "Same code as every Revive coin") : "Code hash does not match the factory",
+    ${item(matches, matches ? (!official ? `Same code as the other ${guard ? "guards" : "coins"} from its factory` : guard ? "Same code as every Revive guard" : "Same code as every Revive coin") : "Code hash does not match the factory",
       `${guard ? "Guard" : "Coin"} code hash <b>${esc(v.code_hash)}</b><br>Factory code hash <b>${esc(v.factory_code_hash || "—")}</b><br>SHA-256 hex ${esc(b58ToHex(v.code_hash))} — compare with the hash printed by <a href="${REPO}/actions" target="_blank" rel="noopener">CI</a>.`)}
     ${item(v.factory_keys === 0 ? true : v.factory_keys === null ? null : false, v.factory_keys === 0 ? "The factory is locked" : "The factory still has keys",
       `${esc(v.factory)} ${v.factory_keys === 0 ? "has no keys, so nobody can change how coins are made." : `has ${v.factory_keys ?? "?"} key(s).`}`)}
@@ -1500,6 +1538,12 @@ async function verifyPanel(src, S) {
     ${guard && !DEMO ? item(!!v.registered, v.registered ? "The guard is registered with the token" : "The guard isn't registered with the token yet",
       v.registered ? `${esc(S.token_id)} has a storage entry for the guard, so stakes and locks can arrive.`
         : `Anyone can fix this by calling storage_deposit on ${esc(S.token_id)} for ${esc(src.id)}.`) : ""}
+    ${guard ? item(null, `The guard covers ${pct}% of the supply`,
+      `Only tokens inside the guard follow Revive's rules: staked ${fmtTokens(S.staked)}, the creator's locked ${fmtTokens(S.dev_locked)} and sealed ${fmtTokens(S.dev_burned)}, out of ${fmtTokens(v.supply)}. A takeover can't touch the other ${Math.max(0, 100 - pct).toFixed(2).replace(/\.00$/, "")}%, including anything the creator keeps in their own wallet.`) : ""}
+    ${guard ? item(v.token_keys === 0 ? true : v.token_keys === null ? null : null, v.token_keys === 0 ? "The token's code is locked" : "The token's own team can still change it",
+      v.token_keys === 0 ? `${esc(S.token_id)} has no access keys, so its code and supply rules can't be changed.`
+        : `${esc(S.token_id)} has ${v.token_keys ?? "?"} access key(s). Whoever holds them could upgrade the token, mint more, or make it report transfers it never made. Revive can't lock another project's contract.`) : ""}
+    ${guard ? item(null, `Connected by ${esc(S.creator)}`, `Anyone can connect any token. Revive can't confirm that ${esc(S.creator)} is the token's own team.`) : ""}
     ${guard ? item(true, "The token itself is untouched", `${esc(v.meta.name || S.config.name)} ($${esc(v.meta.symbol || S.config.symbol)}, ${fmtTokens(v.supply)} supply) is its own NEP-141 contract.
         Revive can't mint, freeze or move it; the guard only holds what holders and the creator send it.`) : ""}
     ${keeperDao && isSputnik(S.keeper)

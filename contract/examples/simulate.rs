@@ -339,6 +339,12 @@ fn heartbeat_case(interval_days: u64) -> Value {
 }
 
 fn main() {
+    // The simulation checks refusals by catching panics, which a panic = "abort" build can't do
+    // (the release profile is set up for the wasm). Say so instead of dying without output.
+    if cfg!(panic = "abort") {
+        eprintln!("run the simulation without --release: cd contract && cargo run --example simulate");
+        std::process::exit(2);
+    }
     std::panic::set_hook(Box::new(|_| {}));
     let plans = [
         Plan { id: "steady", name: "Dev stays", blurb: "The dev pulses every other day for 60 days, claims vesting weekly and spends on memes.",

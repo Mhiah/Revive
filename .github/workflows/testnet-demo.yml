@@ -38,6 +38,9 @@ on:
         description: "Tag of a stopped run to continue (optional), e.g. cia7y"
         required: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

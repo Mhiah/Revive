@@ -531,6 +531,7 @@ mod launch_rules;
 mod invariants;
 mod money;
 mod timing;
+mod known_limits;
 
 /// Everyone's real voting weight at `f`, added up holder by holder (keeper and creator excluded).
 fn honest_total(c: &Revive, accounts: &[&str], f: u64) -> u128 {
